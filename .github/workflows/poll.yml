@@ -64,6 +64,7 @@ jobs:
           SOURCES_EXTRA: ${{ secrets.SOURCES_EXTRA }}
           SOURCES_REMOVE: ${{ secrets.SOURCES_REMOVE }}
           BLOCKLIST: ${{ secrets.BLOCKLIST }}
+          DROP_WORDS: ${{ secrets.DROP_WORDS }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
           SIGNATURE: ${{ vars.SIGNATURE }}
           LOOP_SECONDS: ${{ vars.LOOP_SECONDS }}

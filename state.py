@@ -10,7 +10,7 @@ class State:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}}
+        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": []}
         self.dirty = False
         if self.path.exists():
             try:
@@ -18,6 +18,7 @@ class State:
                 if loaded.get("version") == STATE_VERSION:
                     for name in ("checkpoints", "fails", "alerts"):
                         self.data[name].update(loaded.get(name, {}))
+                    self.data["seen"] = list(loaded.get("seen", []))
                 else:
                     self.dirty = True  # state قدیمی (با کلید هش‌ساده و peers) دور ریخته و بازنویسی می‌شود
             except (ValueError, OSError):
@@ -48,6 +49,13 @@ class State:
 
     def mark_alert(self, code, now):
         self.data["alerts"][code] = now
+        self.dirty = True
+
+    def recent_seen(self, now, window=43200):
+        return [e for e in self.data["seen"] if now - e.get("t", 0) < window]
+
+    def add_seen(self, sig, now, cap=600):
+        self.data["seen"] = (self.recent_seen(now) + [{"t": int(now), "w": sig["w"], "n": sig["n"]}])[-cap:]
         self.dirty = True
 
     def save(self):

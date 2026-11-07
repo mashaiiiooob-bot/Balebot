@@ -23,14 +23,15 @@ from telethon.tl.types import Channel, ChatInviteAlready, InputDialogPeer, Input
 import settings
 from bale_client import BaleClient
 from cleaner import clean_message
-from news_filter import is_news
+from news_filter import is_news, is_ad, has_dropword
+from dedupe import signature, is_duplicate
 from state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
 
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
-STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "not_news": 0, "sent": 0, "failed": 0}
+STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0}
 BASE_STATUS = {}
 STARTED = time.time()
 
@@ -155,6 +156,24 @@ async def fetch_new(client, entity, last_id):
     return None
 
 
+def classify(raw, text, state):
+    """None = ارسال شود (همراه امضای محتوا)؛ وگرنه دلیلِ ارسال‌نشدن."""
+    if not raw.strip():
+        return "no_text", None
+    if not text.strip():
+        return "emptied_by_cleaner", None
+    if is_ad(raw) or is_ad(text):
+        return "ad", None
+    if has_dropword(text, settings.DROP_WORDS):
+        return "dropword", None
+    if not is_news(text):
+        return "not_news", None
+    sig = signature(text)
+    if is_duplicate(sig, state.recent_seen(time.time())):
+        return "duplicate", None
+    return None, sig
+
+
 async def process_source(client, bale, state, entity, tmpdir, scrub=()):
     key = key_for(entity)
     tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
@@ -178,15 +197,13 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         raw = msg.message or ""
         text = clean_message(raw, getattr(msg, "entities", None), names, settings.BLOCKLIST)
         STATS["seen"] += 1
-        if not raw.strip():
-            STATS["no_text"] += 1
-        elif not text.strip():
-            STATS["emptied_by_cleaner"] += 1
-        elif not is_news(text):
-            STATS["not_news"] += 1
-        if is_news(text):
+        reason, sig = classify(raw, text, state)
+        if reason:
+            STATS[reason] += 1
+        else:
             try:
                 await forward(bale, msg, text, tmpdir)
+                state.add_seen(sig, time.time())
                 STATS["sent"] += 1
                 log.info("Forwarded source=%s", tag)
             except FloodWaitError:
@@ -252,6 +269,17 @@ async def resolve_sources(client, state):
             # فقط نوع خطا ثبت می‌شود، نه متن آن (متن خطا ممکن است یوزرنیم منبع را داشته باشد)
             status["sources"][str(index)] = type(exc).__name__
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
+    # حذف منبع بر اساس یوزرنیم/عنوان (SOURCES_REMOVE)، حتی اگر در SOURCES به شکل دیگری آمده باشد
+    terms = settings.get_remove_terms()
+    keep = []
+    for e in entities:
+        uname = (getattr(e, "username", None) or "").lower()
+        title = (getattr(e, "title", None) or "").lower()
+        if uname in terms or any(len(t) >= 6 and t in title for t in terms):
+            continue
+        keep.append(e)
+    status["removed_by_rule"] = len(entities) - len(keep)
+    entities = keep
     state.save()
     BASE_STATUS.update(status)
     write_status(status)

@@ -156,3 +156,61 @@ assert got == ["https://t.me/good_one", "-1001234567", "https://t.me/+AbCdEf123"
 for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("SOURCES OK")
+
+# ================= فیلتر واژه، تکراری، تبلیغ، پایین‌نویس‌ها =================
+from news_filter import has_dropword, is_ad
+import dedupe, importlib
+DW = ["پهلوی", "بی‌بی", "bbc", "اتاق", "کیر", "رایگان", "عجب", "بدو", "آرایش", "شاه", "نیوشا صارمی", "حضرت اعلی"]
+for bad in ["رضا پهلوی در پیامی گفت", "گزارش بی‌بی‌سی از حادثه", "به نقل از بی بی سی فارسی", "BBC reported",
+            "کلاس آرایش رایگان", "نیوشا صارمی حاضر شد", "حضرت اعلی فرمودند", "اتاق فکر تشکیل شد", "شاه ایران", "بدو بدو"]:
+    assert has_dropword(bad, DW), bad
+for ok in ["شاهد عینی گزارش داد", "پادشاهی عربستان", "شاهرود زلزله", "بیبیسیایی", "اتاقک", "عجیب است"]:
+    assert not has_dropword(ok, DW), ok
+
+# تبلیغ
+for ad in ["برای تبلیغات تماس بگیرید", "کد تخفیف ویژه", "عضو کانال ما شوید https://t.me/+AbCd",
+           "خرید ارزان تماس: ۰۹۱۲۳۴۵۶۷۸۹", "فروش ویژه دایرکت بدید", "کانفیگ رایگان فیلترشکن", "پیج اینستاگرام ما را دنبال کنید"]:
+    assert is_ad(ad), ad
+for notad in ["سپاه از شلیک موشک خبر داد", "خرید ۲۰ فروند جنگنده توسط ارتش", "قیمت دلار امروز ۶۸ هزار تومان شد",
+              "فروش نفت ایران افزایش یافت"]:
+    assert not is_ad(notad), notad
+
+# تکراری: املا/ساختار متفاوت
+os.environ["TG_API_HASH"] = "x"
+A = "سپاه پاسداران از شلیک موشک به مواضع مستقر در منطقه خبر داد"
+B = "خبر فوری: شلیك موشك به مواضع مستقر در منطقه توسط سپاه پاسداران اعلام شد"
+C = "پدافند هوایی تهران فعال شد؛ صدای انفجار شنیده شد"
+sa, sb, sc = (dedupe.signature(x) for x in (A, B, C))
+assert dedupe.is_duplicate(sb, [{"t": 1, **sa}]) and not dedupe.is_duplicate(sc, [{"t": 1, **sa}])
+p1 = dedupe.signature("قیمت دلار امروز ۶۸ هزار تومان شد در بازار آزاد تهران")
+p2 = dedupe.signature("قیمت دلار امروز ۷۰ هزار تومان شد در بازار آزاد تهران")
+p3 = dedupe.signature("قیمت دلار امروز ٦٨ هزار تومان شد در بازار آزاد تهران")
+assert not dedupe.is_duplicate(p2, [p1]) and dedupe.is_duplicate(p3, [p1])  # عدد متفاوت = خبر دیگر؛ ارقام عربی/فارسی یکی‌اند
+
+# classify کامل + ماندگاری state
+st = State(tempfile.mkdtemp() + "/s.json")
+settings.DROP_WORDS[:] = DW
+r, sig = poll.classify(A, A, st); assert r is None
+st.add_seen(sig, time.time()); st.save()
+assert poll.classify(B, B, st)[0] == "duplicate"
+assert poll.classify("رضا پهلوی گفت خبر فوری", "رضا پهلوی گفت خبر فوری", st)[0] == "dropword"
+assert poll.classify("خبر فوری تبلیغات", "خبر فوری تبلیغات", st)[0] == "ad"
+st2 = State(st.path); assert poll.classify(B, B, st2)[0] == "duplicate"  # بعد از ریستارت هم یادش می‌ماند
+assert "سپاه" not in open(st.path, encoding="utf-8").read()  # محتوا در state نیست
+
+# سربرگ ir_vasl و «🔴 | اخبار»
+head = "@ir_vasl\n\nتعطیلی وصل | تنها رسانه در ارتباط با استانداری ها👀⚡🔥\n\nمدارس شهر فردا تعطیل است\n\n🔴 | اخبار"
+got = clean_message(head, None, ["ir_vasl"], ["تعطیلی وصل | تنها رسانه در ارتباط با استانداری ها"])
+assert got == "مدارس شهر فردا تعطیل است", repr(got)
+assert clean_message("متن\n🔴 | اخبار", None, [], []) == "متن"
+assert clean_message("قیمت | ۱۰۰ دلار", None, [], []) == "قیمت | ۱۰۰ دلار"
+
+# حذف منبع با یوزرنیم/عنوان
+os.environ["SOURCES"] = "https://t.me/TweetyChannel\n@IranintlTV\n-100123\nhttps://t.me/keep_me"
+os.environ["SOURCES_EXTRA"] = "https://t.me/Akhbare_madrs\nhttps://t.me/ir_vasl"
+os.environ["SOURCES_REMOVE"] = "IranintlTV\nTweetyChannel\nایران اینترنشنال\ntweety"
+importlib.reload(settings)
+assert settings.get_sources() == ["-100123", "https://t.me/keep_me", "https://t.me/Akhbare_madrs", "https://t.me/ir_vasl"], settings.get_sources()
+for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
+importlib.reload(settings)
+print("NEW FILTERS OK")

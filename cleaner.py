@@ -16,6 +16,7 @@ CREDIT_HANDLE = re.compile(rf"^[\W_]*{CREDIT_LABEL}\s*[:：\-–]\s*(?:{HANDLE_T
 EDGE_SEP = re.compile(r"^[\s|•·—–\-:/،,؛;]+|[\s|•·—–\-:/،,؛;]+$")
 SHORT_TAG = re.compile(r"^[A-Za-z0-9]{2,8}$")
 PIPE_TAG_LINE = re.compile(r"^[\W_]*[|•·]\s*[A-Za-z0-9]{2,8}[\W_]*$")
+PIPE_WORD_LINE = re.compile(r"^[^\w|]*\|\s*[\w\u200c]+(?:\s+[\w\u200c]+){0,2}\s*$")
 CAPS_TAG_LINE = re.compile(r"^[\W_]*[A-Z0-9]{2,6}[\W_]*$")
 RTL_RE = re.compile(r"[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
 
@@ -139,6 +140,8 @@ def clean_text(text, names=(), blocklist=()):
                 continue  # «منبع:» که نامش حذف شد
         if CREDIT_HANDLE.match(new):
             continue  # «منبع: someHandle»
+        if PIPE_WORD_LINE.match(new):
+            continue  # خطی مثل «🔴 | اخبار» (برچسب پایین‌نویس)
         if PIPE_TAG_LINE.match(new):
             continue  # خطی مثل «| TCH»
         if rtl_message and CAPS_TAG_LINE.match(new) and new.strip(" |•·-—–").lower() not in SAFE_WORDS:

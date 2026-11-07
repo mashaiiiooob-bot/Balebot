@@ -20,6 +20,8 @@ BALE_ADMIN_CHAT = _get("BALE_ADMIN_CHAT", "")
 HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
 # عبارت‌هایی که باید از متن حذف شوند (هر مورد در یک خط): نام کانال‌ها/رسانه‌ها، شعارها، آیدی‌ها
 BLOCKLIST = [x.strip() for x in os.environ.get("BLOCKLIST", "").splitlines() if x.strip()]
+# پیامی که این واژه‌ها را (به‌صورت واژه‌ی کامل) داشته باشد ارسال نمی‌شود؛ هر مورد در یک خط
+DROP_WORDS = [x.strip() for x in os.environ.get("DROP_WORDS", "").splitlines() if x.strip()]
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 
@@ -61,9 +63,14 @@ def _norm_source(item):
     return item.lstrip("@").lower()
 
 
+def get_remove_terms():
+    """عبارت‌های SOURCES_REMOVE (نرمال‌شده)؛ برای حذف منبع بر اساس یوزرنیم یا عنوان بعد از resolve هم استفاده می‌شود."""
+    return [x.strip().lstrip("@").lower() for x in os.environ.get("SOURCES_REMOVE", "").replace(",", "\n").splitlines() if x.strip()]
+
+
 def get_sources():
     """SOURCES + SOURCES_EXTRA، منهای SOURCES_REMOVE (بدون تکرار). لینک، یوزرنیم یا شناسه عددی."""
-    removed = {_norm_source(x) for x in _parse(os.environ.get("SOURCES_REMOVE", ""))}
+    removed = {_norm_source(x) for x in get_remove_terms()}
     seen, out = set(), []
     for item in _parse(os.environ.get("SOURCES", "")) + _parse(os.environ.get("SOURCES_EXTRA", "")):
         key = _norm_source(item)
