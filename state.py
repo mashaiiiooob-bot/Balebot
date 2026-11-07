@@ -8,13 +8,14 @@ class State:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"checkpoints": {}, "fails": {}}
+        self.data = {"checkpoints": {}, "fails": {}, "peers": {}}
         self.dirty = False
         if self.path.exists():
             try:
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
                 self.data["checkpoints"].update(loaded.get("checkpoints", {}))
                 self.data["fails"].update(loaded.get("fails", {}))
+                self.data["peers"].update(loaded.get("peers", {}))
             except (ValueError, OSError):
                 pass
 
@@ -36,6 +37,15 @@ class State:
 
     def clear_fail(self, key, message_id):
         if self.data["fails"].pop(f"{key}:{message_id}", None) is not None:
+            self.dirty = True
+
+    def get_peer(self, src_key):
+        return self.data["peers"].get(src_key)
+
+    def set_peer(self, src_key, channel_id, access_hash):
+        value = [int(channel_id), int(access_hash)]
+        if self.data["peers"].get(src_key) != value:
+            self.data["peers"][src_key] = value
             self.dirty = True
 
     def save(self):

@@ -13,8 +13,9 @@ import time
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import CheckChatInviteRequest
-from telethon.tl.types import ChatInviteAlready
+from telethon import utils
+from telethon.tl.functions.messages import CheckChatInviteRequest, GetPeerDialogsRequest
+from telethon.tl.types import Channel, ChatInviteAlready, InputDialogPeer, InputPeerChannel
 
 import settings
 from bale_client import BaleClient
@@ -141,10 +142,14 @@ def safe_err(exc, source):
     return f"{type(exc).__name__}: {msg}"
 
 
-async def resolve_sources(client):
+def src_key(source):
+    return hashlib.sha256(source.encode()).hexdigest()[:16]
+
+
+async def resolve_sources(client, state):
     status = {"dialogs": "ok", "count": len(settings.get_sources()), "sources": {}}
     try:
-        await client.get_dialogs()  # کش کردن موجودیت‌ها؛ از resolve مکرر یوزرنیم جلوگیری می‌کند
+        await client.get_dialogs()  # کش کردن موجودیت‌ها
     except Exception as exc:
         status["dialogs"] = safe_err(exc, "")
         log.warning("get_dialogs failed: %s", type(exc).__name__)
@@ -152,24 +157,55 @@ async def resolve_sources(client):
     for index, source in enumerate(settings.get_sources(), 1):
         try:
             invite = INVITE_RE.search(source)
+            cached = None if invite else state.get_peer(src_key(source))
             if invite:
-                # پارسر Telethon هش‌های دارای «-» را نمی‌پذیرد؛ خودمان بررسی می‌کنیم.
                 res = await client(CheckChatInviteRequest(invite.group(1)))
                 if not isinstance(res, ChatInviteAlready):
                     raise ValueError("account is not a member of this private chat")
                 entity = res.chat
+            elif cached:
+                entity = await client.get_entity(InputPeerChannel(cached[0], cached[1]))
             else:
                 target = int(source) if re.fullmatch(r"-?\d+", source) else source
                 entity = await client.get_entity(target)
+                if isinstance(entity, Channel) and entity.access_hash:
+                    state.set_peer(src_key(source), entity.id, entity.access_hash)
+                await asyncio.sleep(0.5)  # فاصله بین resolveهای جدید (جلوگیری از FloodWait)
             entities.append(entity)
             status["sources"][str(index)] = "ok"
             log.info("Source #%d ready", index)
+        except FloodWaitError as exc:
+            status["sources"][str(index)] = f"FloodWait {exc.seconds}s"
+            log.warning("Source #%d flood wait %ss; retry next run", index, exc.seconds)
         except Exception as exc:
             status["sources"][str(index)] = safe_err(exc, source)
             # عمداً خود منبع (ممکن است لینک خصوصی باشد) چاپ نمی‌شود؛ لاگ عمومی است.
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
+    state.save()
     write_status(status)
     return entities
+
+
+async def changed_entities(client, state, entities):
+    """با یک درخواست، کانال‌هایی را که پیام جدید دارند پیدا می‌کند؛ در صورت خطا همه را برمی‌گرداند."""
+    try:
+        tops = {}
+        for i in range(0, len(entities), 90):
+            chunk = entities[i:i + 90]
+            peers = [InputDialogPeer(await client.get_input_entity(e)) for e in chunk]
+            res = await client(GetPeerDialogsRequest(peers=peers))
+            for d in res.dialogs:
+                tops[utils.get_peer_id(d.peer)] = d.top_message
+        out = []
+        for e in entities:
+            top = tops.get(utils.get_peer_id(e))
+            last = state.last_id(key_for(e))
+            if top is None or not last or top > last:
+                out.append(e)
+        return out
+    except Exception as exc:
+        log.warning("Peer-dialog precheck failed (%s); polling all", type(exc).__name__)
+        return entities
 
 
 async def run():
@@ -194,13 +230,13 @@ async def run():
         if not await client.is_user_authorized():
             log.error("Telegram session is not authorized. Regenerate TG_SESSION.")
             return 3
-        entities = await resolve_sources(client)
+        entities = await resolve_sources(client, state)
         if not entities:
             log.error("No source could be resolved.")
             return 4
 
         while True:
-            for entity in entities:
+            for entity in await changed_entities(client, state, entities):
                 try:
                     await process_source(client, bale, state, entity, tmpdir)
                 except FloodWaitError as exc:
