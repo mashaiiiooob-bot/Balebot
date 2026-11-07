@@ -21,7 +21,12 @@ HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
 # عبارت‌هایی که باید از متن حذف شوند (هر مورد در یک خط): نام کانال‌ها/رسانه‌ها، شعارها، آیدی‌ها
 BLOCKLIST = [x.strip() for x in (os.environ.get("BLOCKLIST", "") + "\n" + os.environ.get("BLOCKLIST_EXTRA", "")).splitlines() if x.strip()]
 # پیامی که این واژه‌ها را (به‌صورت واژه‌ی کامل) داشته باشد ارسال نمی‌شود؛ هر مورد در یک خط
-DROP_WORDS = [x.strip() for x in (os.environ.get("DROP_WORDS", "") + "\n" + os.environ.get("DROP_WORDS_EXTRA", "")).splitlines() if x.strip()]
+# واژه‌های ممنوعه‌ی ثابت (به فهرست Secretهای DROP_WORDS/DROP_WORDS_EXTRA اضافه می‌شوند؛ تکراری‌ها حذف می‌شوند)
+_DEFAULT_DROP_WORDS = [
+    "پهلوی", "بی بی", "بی‌بی", "اتاق", "کیر", "رایگان", "عجب", "بدو", "آرایش", "شاه",
+    "نیوشا صارمی", "حضرت", "اعلی", "شاهزاده",
+]
+DROP_WORDS = list(dict.fromkeys(_DEFAULT_DROP_WORDS + [x.strip() for x in (os.environ.get("DROP_WORDS", "") + "\n" + os.environ.get("DROP_WORDS_EXTRA", "")).splitlines() if x.strip()]))
 # حداقل سطح فحش که حذف شود: 1 = همه (ملایم تا رکیک)، 2 = متوسط و رکیک، 3 = فقط رکیک
 PROFANITY_MIN_LEVEL = int(_get("PROFANITY_MIN_LEVEL", "1"))
 MAX_FILE_MB = 45

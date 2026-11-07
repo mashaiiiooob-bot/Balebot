@@ -219,7 +219,7 @@ print("NEW FILTERS OK")
 os.environ["DROP_WORDS"] = "شاه"; os.environ["DROP_WORDS_EXTRA"] = "وحید"
 os.environ["BLOCKLIST"] = "TCH"; os.environ["BLOCKLIST_EXTRA"] = "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید"
 importlib.reload(settings)
-assert settings.DROP_WORDS == ["شاه", "وحید"] and "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید" in settings.BLOCKLIST
+assert "وحید" in settings.DROP_WORDS and settings.DROP_WORDS.count("شاه") == 1 and "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید" in settings.BLOCKLIST
 assert has_dropword("وحید گفت مدارس تعطیل است", settings.DROP_WORDS) and not has_dropword("وحیدی گفت", settings.DROP_WORDS)
 msg = "مدارس تهران فردا تعطیل است\n\nجمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید❤️👇"
 assert clean_message(msg, None, [], settings.BLOCKLIST) == "مدارس تهران فردا تعطیل است", repr(clean_message(msg, None, [], settings.BLOCKLIST))
