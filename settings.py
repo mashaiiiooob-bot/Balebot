@@ -6,7 +6,7 @@ def _get(name, default):
     value = os.environ.get(name, "")
     return value.strip() if value and value.strip() else default
 
-BALE_DESTINATION = _get("BALE_DESTINATION", "@maklpo")
+BALE_DESTINATION = _get("BALE_DESTINATION", "@bale_dr")
 SIGNATURE = _get("SIGNATURE", "✍️  F16\n\n⚔️ @Bale_Dr")
 STATE_FILE = _get("STATE_FILE", "state/state.json")
 
@@ -31,12 +31,21 @@ NEWS_KEYWORDS = [
     "latest", "election", "government", "president", "minister",
     "parliament", "military", "attack", "conflict", "earthquake",
     "flood", "fire", "explosion", "israel", "iran", "ukraine",
+    # گسترش فیلتر: اقتصاد، سیاست، امنیت، حوادث، هواشناسی، بین‌الملل
+    "دلار", "قیمت", "سکه", "طلا", "نفت", "تورم", "بورس", "بانک مرکزی", "مذاکره", "مذاکرات",
+    "توافق", "تحریم", "سپاه", "موشک", "پهپاد", "پدافند", "جنگ", "آتش‌بس", "آتش بس",
+    "بازداشت", "دستگیر", "کشته", "زخمی", "شهید", "اعدام", "دادگاه", "قوه قضائیه", "مجلس",
+    "رهبر", "فرمانده", "سخنگو", "بیانیه", "سفیر", "هشدار", "هواشناسی", "بارش", "طوفان",
+    "تجمع", "اعتراض", "تظاهرات", "اعتصاب", "مرز", "نیروهای", "تصاویر", "ویدیو", "ویدئو",
+    "تهران", "واشنگتن", "اسرائیل", "آمریکا", "روسیه", "چین", "لبنان", "غزه", "سوریه", "عراق",
+    "strike", "killed", "sanctions", "talks", "protest", "missile", "drone", "ceasefire",
+    "dollar", "police", "court", "washington", "tehran", "russia", "china", "gaza", "lebanon",
     "חדשות", "דיווח", "הודיע", "בחירות", "ממשלה",
 ]
 
 AD_KEYWORDS = [
     "تبلیغات", "تبلیغ", "اسپانسر", "برای خرید", "کد تخفیف",
-    "ثبت سفارش", "همکاری تبلیغاتی", "ad:", "sponsored", "promo code",
+    "ثبت سفارش", "همکاری تبلیغاتی", "#ad", "sponsored", "promo code",
     "discount code", "buy now", "برای تبلیغ",
 ]
 
