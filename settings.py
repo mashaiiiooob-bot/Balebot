@@ -6,7 +6,7 @@ def _get(name, default):
     value = os.environ.get(name, "")
     return value.strip() if value and value.strip() else default
 
-BALE_DESTINATION = _get("BALE_DESTINATION", "@bale_dr")
+BALE_DESTINATION = _get("BALE_DESTINATION", "@maklpo")
 SIGNATURE = _get("SIGNATURE", "✍️  F16\n\n⚔️ @Bale_Dr")
 STATE_FILE = _get("STATE_FILE", "state/state.json")
 
