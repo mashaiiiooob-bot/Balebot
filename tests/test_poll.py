@@ -144,3 +144,15 @@ assert clean_message("نشست OPEC برگزار شد", None, [], []) == "نشس
 assert clean_message("خبر\nBREAKING", None, [], []) == "خبر\nBREAKING"
 assert clean_message("قیمت | ۱۰۰ دلار", None, [], []) == "قیمت | ۱۰۰ دلار"
 print("TAG OK")
+
+# ---------- افزودن/حذف منبع بدون دیدن Secret اصلی ----------
+import importlib
+os.environ["SOURCES"] = "https://t.me/good_one\n@iran_charshansboriii\n-1001234567\nhttps://t.me/+AbCdEf123"
+os.environ["SOURCES_EXTRA"] = "https://t.me/iran_charshanbsoriii\nhttps://t.me/Good_One"
+os.environ["SOURCES_REMOVE"] = "iran_charshansboriii"
+importlib.reload(settings)
+got = settings.get_sources()
+assert got == ["https://t.me/good_one", "-1001234567", "https://t.me/+AbCdEf123", "https://t.me/iran_charshanbsoriii"], got
+for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
+importlib.reload(settings)
+print("SOURCES OK")

@@ -61,6 +61,8 @@ jobs:
           BALE_ADMIN_CHAT: ${{ secrets.BALE_ADMIN_CHAT }}
           HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
           SOURCES: ${{ secrets.SOURCES }}
+          SOURCES_EXTRA: ${{ secrets.SOURCES_EXTRA }}
+          SOURCES_REMOVE: ${{ secrets.SOURCES_REMOVE }}
           BLOCKLIST: ${{ secrets.BLOCKLIST }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
           SIGNATURE: ${{ vars.SIGNATURE }}

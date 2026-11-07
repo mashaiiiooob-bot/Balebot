@@ -40,8 +40,26 @@ AD_KEYWORDS = [
     "discount code", "buy now", "برای تبلیغ",
 ]
 
+def _parse(raw):
+    return [x.strip() for x in re.split(r"\\n|[\s,;]+", raw or "") if x.strip()]
+
+
+def _norm_source(item):
+    """لینک/@یوزرنیم/یوزرنیم را به یک شکل یکسان (حروف کوچک) تبدیل می‌کند تا تکراری‌ها و حذفی‌ها تشخیص داده شوند."""
+    m = re.search(r"(?:t\.me|telegram\.me)/(?!\+|joinchat)([A-Za-z0-9_]{4,})", item, re.I)
+    if m:
+        return m.group(1).lower()
+    return item.lstrip("@").lower()
+
+
 def get_sources():
-    """SOURCES: هر منبع در یک خط (یا جداشده با ویرگول). لینک، یوزرنیم یا شناسه عددی."""
-    raw = os.environ.get("SOURCES", "")
-    items = [x.strip() for x in re.split(r"\\n|[\s,;]+", raw) if x.strip()]
-    return items
+    """SOURCES + SOURCES_EXTRA، منهای SOURCES_REMOVE (بدون تکرار). لینک، یوزرنیم یا شناسه عددی."""
+    removed = {_norm_source(x) for x in _parse(os.environ.get("SOURCES_REMOVE", ""))}
+    seen, out = set(), []
+    for item in _parse(os.environ.get("SOURCES", "")) + _parse(os.environ.get("SOURCES_EXTRA", "")):
+        key = _norm_source(item)
+        if key in removed or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
