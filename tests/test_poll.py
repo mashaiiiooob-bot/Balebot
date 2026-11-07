@@ -240,3 +240,13 @@ assert not dedupe.is_duplicate(other, [{"t": now, **sl}], now)     # شهر دی
 two = dedupe.signature("تعطیلی مدارس")                               # ۲ واژه: فقط برابر دقیق
 assert not dedupe.is_duplicate(two, [{"t": now, **sl}], now)
 print("DEDUPE2 OK")
+
+# ---------- حذف منبع با حروف هم‌شکل و نوشتار فارسی متفاوت ----------
+os.environ["SOURCES"] = "@IranintITV\nhttps://t.me/IranintlTV\nt.me/IRANINT1TV\nhttps://t.me/keep_me"
+os.environ["SOURCES_REMOVE"] = "IranintITV"
+importlib.reload(settings)
+assert settings.get_sources() == ["https://t.me/keep_me"], settings.get_sources()
+assert settings.confuse("ايران اينترنشنال\u200c") == settings.confuse("ایران اینترنشنال")
+for k in ("SOURCES", "SOURCES_REMOVE"): os.environ.pop(k)
+importlib.reload(settings)
+print("REMOVE2 OK")

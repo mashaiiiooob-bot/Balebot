@@ -270,12 +270,14 @@ async def resolve_sources(client, state):
             status["sources"][str(index)] = type(exc).__name__
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
     # حذف منبع بر اساس یوزرنیم/عنوان (SOURCES_REMOVE)، حتی اگر در SOURCES به شکل دیگری آمده باشد
-    terms = settings.get_remove_terms()
+    terms = [settings.confuse(t) for t in settings.get_remove_terms()]
     keep = []
     for e in entities:
-        uname = (getattr(e, "username", None) or "").lower()
-        title = (getattr(e, "title", None) or "").lower()
-        if uname in terms or any(len(t) >= 6 and t in title for t in terms):
+        unames = [getattr(e, "username", None)] + [getattr(u, "username", None) for u in (getattr(e, "usernames", None) or [])]
+        unames = [settings.confuse(u) for u in unames if u]
+        title = settings.confuse(getattr(e, "title", None) or "")
+        if any(u in terms for u in unames) or any(len(t) >= 6 and t in title for t in terms) \
+                or any(len(t) >= 6 and t in u for t in terms for u in unames):
             continue
         keep.append(e)
     status["removed_by_rule"] = len(entities) - len(keep)

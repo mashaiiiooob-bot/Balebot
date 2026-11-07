@@ -63,6 +63,13 @@ def _norm_source(item):
     return item.lstrip("@").lower()
 
 
+def confuse(text):
+    """نرمال‌سازی برای تطبیق حذف: حروف هم‌شکل (I بزرگ، l کوچک، 1، |) یکی حساب می‌شوند؛ ی/ک عربی و نیم‌فاصله یکسان می‌شوند."""
+    t = (text or "").lower().replace("ي", "ی").replace("ك", "ک").replace("\u200c", " ")
+    t = t.translate({ord("i"): "l", ord("1"): "l", ord("|"): "l", ord("0"): "o"})
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def get_remove_terms():
     """عبارت‌های SOURCES_REMOVE (نرمال‌شده)؛ برای حذف منبع بر اساس یوزرنیم یا عنوان بعد از resolve هم استفاده می‌شود."""
     return [x.strip().lstrip("@").lower() for x in os.environ.get("SOURCES_REMOVE", "").replace(",", "\n").splitlines() if x.strip()]
@@ -70,11 +77,11 @@ def get_remove_terms():
 
 def get_sources():
     """SOURCES + SOURCES_EXTRA، منهای SOURCES_REMOVE (بدون تکرار). لینک، یوزرنیم یا شناسه عددی."""
-    removed = {_norm_source(x) for x in get_remove_terms()}
+    removed = {confuse(_norm_source(x)) for x in get_remove_terms()}
     seen, out = set(), []
     for item in _parse(os.environ.get("SOURCES", "")) + _parse(os.environ.get("SOURCES_EXTRA", "")):
         key = _norm_source(item)
-        if key in removed or key in seen:
+        if confuse(key) in removed or key in seen:
             continue
         seen.add(key)
         out.append(item)
