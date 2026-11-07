@@ -1,0 +1,415 @@
+{
+ "ai": {
+  "mode": "on",
+  "providers": {
+   "cloudflare": {
+    "daily_limit": 400,
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "probe": "ok"
+   },
+   "deepseek": {
+    "listed": [
+     "deepseek-flash",
+     "deepseek-v4-pro"
+    ],
+    "model": "deepseek-flash",
+    "probe": "http_402"
+   },
+   "gemini": {
+    "daily_limit": 800,
+    "model": "gemini-3.5-flash-lite",
+    "probe": "ok"
+   },
+   "groq": {
+    "daily_limit": 800,
+    "model": "openai/gpt-oss-120b",
+    "probe": "ok"
+   }
+  },
+  "strategy": "vote"
+ },
+ "ai_stats": {
+  "cloudflare_analyst_ok": 78,
+  "cloudflare_error": 5,
+  "gemini_analyst_ok": 150,
+  "gemini_error": 19,
+  "gemini_gate_ok": 5,
+  "groq_analyst_ok": 41,
+  "groq_error": 17,
+  "groq_gate_ok": 1
+ },
+ "bale_diag": {
+  "getChat": "ok",
+  "getMe": "ok"
+ },
+ "bale_outage": null,
+ "compare": {
+  "agreement": {
+   "cloudflare|gemini": {
+    "agree": 1221,
+    "of": 1463,
+    "rate": 0.83
+   },
+   "cloudflare|groq": {
+    "agree": 455,
+    "of": 542,
+    "rate": 0.84
+   },
+   "gemini|groq": {
+    "agree": 328,
+    "of": 362,
+    "rate": 0.91
+   }
+  },
+  "github_e2e_sec": {
+   "n": 374,
+   "p50": 11.5,
+   "p95": 37.4
+  },
+  "providers": {
+   "cloudflare": {
+    "avg_tokens_per_call": 697,
+    "calls": 5388,
+    "err": 176,
+    "err_rate": 0.033,
+    "ok": 5212,
+    "p50_ms": 2359,
+    "p95_ms": 5213,
+    "provider_ratelimit": null,
+    "tokens_seen": 75959
+   },
+   "deepseek": {
+    "avg_tokens_per_call": null,
+    "calls": 0,
+    "err": 0,
+    "err_rate": null,
+    "ok": 0,
+    "p50_ms": null,
+    "p95_ms": null,
+    "provider_ratelimit": null,
+    "tokens_seen": 0
+   },
+   "gemini": {
+    "avg_tokens_per_call": 689,
+    "calls": 7235,
+    "err": 1093,
+    "err_rate": 0.151,
+    "ok": 6142,
+    "p50_ms": 662,
+    "p95_ms": 2602,
+    "provider_ratelimit": null,
+    "tokens_seen": 140500
+   },
+   "groq": {
+    "avg_tokens_per_call": 778,
+    "calls": 7842,
+    "err": 634,
+    "err_rate": 0.081,
+    "ok": 7208,
+    "p50_ms": 548,
+    "p95_ms": 782,
+    "provider_ratelimit": {
+     "x-ratelimit-limit-requests": "1000",
+     "x-ratelimit-limit-tokens": "8000",
+     "x-ratelimit-remaining-requests": "999",
+     "x-ratelimit-remaining-tokens": "8000",
+     "x-ratelimit-reset-requests": "1m26.4s",
+     "x-ratelimit-reset-tokens": "1ms"
+    },
+    "tokens_seen": 39673
+   }
+  },
+  "vs_rules": {
+   "cloudflare": {
+    "err": 30,
+    "false_alarm": 0.2,
+    "fn": 557,
+    "fp": 219,
+    "recall": 0.51,
+    "tn": 882,
+    "tp": 571
+   },
+   "gemini": {
+    "err": 157,
+    "false_alarm": 0.04,
+    "fn": 489,
+    "fp": 34,
+    "recall": 0.44,
+    "tn": 830,
+    "tp": 381
+   },
+   "groq": {
+    "err": 91,
+    "false_alarm": 0.02,
+    "fn": 451,
+    "fp": 1,
+    "recall": 0.35,
+    "tn": 53,
+    "tp": 239
+   }
+  }
+ },
+ "count": 36,
+ "dialogs": "ok",
+ "panel": {
+  "admin_stats": true,
+  "admin_summary": {
+   "dc": 4,
+   "derived_keys": [
+    "growth",
+    "joined_left",
+    "languages",
+    "new_followers_by_source",
+    "views_by_source"
+   ],
+   "followers": 399.0,
+   "graphs_err": [],
+   "graphs_ok": [
+    "growth_graph",
+    "followers_graph",
+    "views_by_source_graph",
+    "new_followers_by_source_graph",
+    "languages_graph"
+   ]
+  },
+  "admins": 1,
+  "channel_check": {
+   "fetched_utc": "2026-11-28 13:47",
+   "full_error": null,
+   "posts": 500,
+   "subs": 399
+  },
+  "enabled": true,
+  "errors": 1,
+  "last_error": null,
+  "polls": 619,
+  "unauthorized": 0,
+  "updates": 4
+ },
+ "removed_by_rule": 0,
+ "sem": {
+  "calibration": {
+   "0.80": [
+    32,
+    69
+   ],
+   "0.82": [
+    39,
+    54
+   ],
+   "0.84": [
+    40,
+    45
+   ],
+   "0.86": [
+    50,
+    40
+   ],
+   "0.88": [
+    9,
+    1
+   ],
+   "0.90": [
+    8,
+    1
+   ],
+   "0.92": [
+    1,
+    0
+   ]
+  },
+  "calibration_pairs": 389,
+  "dims": 1024,
+  "memory": 113,
+  "mode": "on",
+  "model": "@cf/baai/bge-m3",
+  "probe": "ok",
+  "provider": "cloudflare",
+  "t_high": 0.88,
+  "t_low": 0.8
+ },
+ "since_utc": "2026-11-09 03:31",
+ "sources": {
+  "1": "ok",
+  "10": "ok",
+  "11": "ok",
+  "12": "ok",
+  "13": "ok",
+  "14": "ok",
+  "15": "ok",
+  "16": "ok",
+  "17": "ok",
+  "18": "ok",
+  "19": "ok",
+  "2": "ok",
+  "20": "ok",
+  "21": "ok",
+  "22": "ok",
+  "23": "ok",
+  "24": "ok",
+  "25": "ok",
+  "26": "ok",
+  "27": "ok",
+  "28": "ok",
+  "29": "ok",
+  "3": "ok",
+  "30": "ok",
+  "31": "ok",
+  "32": "ok",
+  "33": "ok",
+  "34": "ok",
+  "35": "ok",
+  "36": "ok",
+  "4": "ok",
+  "5": "ok",
+  "6": "ok",
+  "7": "ok",
+  "8": "ok",
+  "9": "ok"
+ },
+ "stats": {
+  "ad": 60,
+  "ai_ad": 3,
+  "ai_banned": 1,
+  "ai_calls": 0,
+  "ai_caught": 0,
+  "ai_errors": 0,
+  "ai_rescued": 0,
+  "ai_skipped": 0,
+  "analyst_calls": 166,
+  "analyst_errors": 6,
+  "analyst_rescued": 1,
+  "analyst_veto_confirmed": 76,
+  "analyst_veto_overruled": 47,
+  "audit_ad_good": 2,
+  "audit_ad_n": 4,
+  "audit_dropword_n": 4,
+  "audit_not_news_good": 1,
+  "audit_not_news_n": 4,
+  "bale_outage": 1,
+  "dropword": 85,
+  "dup_v1_only": 16,
+  "dup_v2_only": 0,
+  "duplicate": 24,
+  "emptied_by_cleaner": 2,
+  "failed": 1,
+  "gate_calls": 6,
+  "gate_errors": 0,
+  "imp_1": 10,
+  "imp_2": 37,
+  "imp_3": 78,
+  "imp_4": 47,
+  "imp_5": 0,
+  "last_fail": "RuntimeError: Bale network error on sendVideo: ConnectionError",
+  "low_importance": 66,
+  "no_text": 58,
+  "not_news": 77,
+  "profanity": 11,
+  "rate_cap": 16,
+  "seen": 478,
+  "sem_calls": 185,
+  "sem_caught": 5,
+  "sem_dup": 13,
+  "sem_errors": 52,
+  "sem_llm": 0,
+  "sem_new": 0,
+  "sem_rescued": 0,
+  "sem_vetoed": 0,
+  "sent": 74,
+  "sh_dup_ai_dup": 0,
+  "sh_dup_ai_new": 0,
+  "sh_gate_ad": 1,
+  "sh_gate_banned": 0,
+  "sh_gate_low": 4,
+  "sh_new_ai_dup": 0,
+  "sh_new_ai_new": 0,
+  "too_old": 0
+ },
+ "stats_total": {
+  "ad": 3447,
+  "ai_ad": 332,
+  "ai_banned": 275,
+  "ai_calls": 841,
+  "ai_caught": 228,
+  "ai_errors": 87,
+  "ai_rescued": 92,
+  "ai_skipped": 1110,
+  "analyst_calls": 3332,
+  "analyst_errors": 362,
+  "analyst_rescued": 8,
+  "analyst_veto_confirmed": 1556,
+  "analyst_veto_overruled": 764,
+  "audit_ad_good": 38,
+  "audit_ad_n": 131,
+  "audit_dropword_good": 39,
+  "audit_dropword_n": 171,
+  "audit_not_news_good": 9,
+  "audit_not_news_n": 173,
+  "audit_profanity_good": 1,
+  "audit_profanity_n": 7,
+  "bale_outage": 2159,
+  "dropword": 4414,
+  "dup_v1_only": 303,
+  "dup_v2_only": 0,
+  "duplicate": 1937,
+  "emptied_by_cleaner": 48,
+  "failed": 4690,
+  "gate_calls": 7118,
+  "gate_errors": 62,
+  "imp_1": 296,
+  "imp_2": 719,
+  "imp_3": 1937,
+  "imp_4": 2030,
+  "imp_5": 314,
+  "low_importance": 1867,
+  "no_text": 2595,
+  "not_news": 3957,
+  "profanity": 331,
+  "rate_cap": 793,
+  "seen": 39112,
+  "sem_calls": 5429,
+  "sem_caught": 297,
+  "sem_dup": 698,
+  "sem_errors": 888,
+  "sem_llm": 77,
+  "sem_new": 599,
+  "sem_rescued": 20,
+  "sem_vetoed": 0,
+  "sent": 4558,
+  "sh_dup_ai_dup": 140,
+  "sh_dup_ai_new": 92,
+  "sh_gate_ad": 216,
+  "sh_gate_banned": 178,
+  "sh_gate_low": 609,
+  "sh_new_ai_dup": 228,
+  "sh_new_ai_new": 294,
+  "too_old": 9868
+ },
+ "supabase": {
+  "dropped_bad": 0,
+  "dropped_overflow": 0,
+  "enabled": true,
+  "failed_posts": 0,
+  "last_error": null,
+  "last_ok_utc": "2026-11-28 14:06",
+  "queued": {
+   "channel": 0,
+   "events": 0,
+   "posts": 0,
+   "status": 0
+  },
+  "rows_sent": 1034
+ },
+ "tg": {
+  "dropped_age": 0,
+  "dropped_overflow": 0,
+  "enabled": true,
+  "failed_attempts": 0,
+  "last_error": null,
+  "last_ok_utc": "2026-11-28 14:01",
+  "queued": 0,
+  "sent": 74,
+  "skipped_duplicate": 1
+ },
+ "uptime_min": 260
+}
