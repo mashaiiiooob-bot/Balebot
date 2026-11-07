@@ -1,5 +1,5 @@
 import re
-from config import NEWS_KEYWORDS, AD_KEYWORDS
+from settings import NEWS_KEYWORDS, AD_KEYWORDS
 
 def normalize(text: str) -> str:
     text = (text or "").casefold()
