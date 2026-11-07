@@ -214,3 +214,15 @@ assert settings.get_sources() == ["-100123", "https://t.me/keep_me", "https://t.
 for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("NEW FILTERS OK")
+
+# ---------- وحید + «اولین چنلی که خبر تعطیلی ...» ----------
+os.environ["DROP_WORDS"] = "شاه"; os.environ["DROP_WORDS_EXTRA"] = "وحید"
+os.environ["BLOCKLIST"] = "TCH"; os.environ["BLOCKLIST_EXTRA"] = "اولین چنلی که خبر تعطیلی رو میذاره"
+importlib.reload(settings)
+assert settings.DROP_WORDS == ["شاه", "وحید"] and "اولین چنلی که خبر تعطیلی رو میذاره" in settings.BLOCKLIST
+assert has_dropword("وحید گفت مدارس تعطیل است", settings.DROP_WORDS) and not has_dropword("وحیدی گفت", settings.DROP_WORDS)
+msg = "مدارس تهران فردا تعطیل است\n\nاولین چنلی که خبر تعطیلی رو میذاره❤️👇"
+assert clean_message(msg, None, [], settings.BLOCKLIST) == "مدارس تهران فردا تعطیل است", repr(clean_message(msg, None, [], settings.BLOCKLIST))
+for k in ("DROP_WORDS", "DROP_WORDS_EXTRA", "BLOCKLIST", "BLOCKLIST_EXTRA"): os.environ.pop(k)
+importlib.reload(settings)
+print("EXTRA OK")

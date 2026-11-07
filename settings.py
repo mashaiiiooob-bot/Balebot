@@ -19,9 +19,9 @@ BACKFILL_LIMIT = int(_get("BACKFILL_LIMIT", "0"))
 BALE_ADMIN_CHAT = _get("BALE_ADMIN_CHAT", "")
 HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
 # عبارت‌هایی که باید از متن حذف شوند (هر مورد در یک خط): نام کانال‌ها/رسانه‌ها، شعارها، آیدی‌ها
-BLOCKLIST = [x.strip() for x in os.environ.get("BLOCKLIST", "").splitlines() if x.strip()]
+BLOCKLIST = [x.strip() for x in (os.environ.get("BLOCKLIST", "") + "\n" + os.environ.get("BLOCKLIST_EXTRA", "")).splitlines() if x.strip()]
 # پیامی که این واژه‌ها را (به‌صورت واژه‌ی کامل) داشته باشد ارسال نمی‌شود؛ هر مورد در یک خط
-DROP_WORDS = [x.strip() for x in os.environ.get("DROP_WORDS", "").splitlines() if x.strip()]
+DROP_WORDS = [x.strip() for x in (os.environ.get("DROP_WORDS", "") + "\n" + os.environ.get("DROP_WORDS_EXTRA", "")).splitlines() if x.strip()]
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 
