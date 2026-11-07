@@ -1,0 +1,224 @@
+{
+ "ai": {
+  "mode": "on",
+  "providers": {
+   "cloudflare": {
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "probe": "ok"
+   },
+   "deepseek": {
+    "listed": [
+     "deepseek-flash",
+     "deepseek-v4-pro"
+    ],
+    "model": "deepseek-flash",
+    "probe": "http_402"
+   },
+   "gemini": {
+    "model": "gemini-3.5-flash-lite",
+    "probe": "ok"
+   },
+   "groq": {
+    "model": "openai/gpt-oss-120b",
+    "probe": "ok"
+   }
+  },
+  "strategy": "vote"
+ },
+ "ai_stats": {
+  "groq_gate_ok": 28
+ },
+ "bale_diag": {
+  "getChat": "http_404",
+  "getMe": "ok"
+ },
+ "bale_outage": {
+  "retry_in_s": 63,
+  "since_utc": "2026-11-14 15:42"
+ },
+ "compare": {
+  "agreement": {
+   "cloudflare|gemini": {
+    "agree": 312,
+    "of": 428,
+    "rate": 0.73
+   },
+   "cloudflare|groq": {
+    "agree": 19,
+    "of": 24,
+    "rate": 0.79
+   },
+   "gemini|groq": {
+    "agree": 13,
+    "of": 13,
+    "rate": 1.0
+   }
+  },
+  "github_e2e_sec": {
+   "n": 17,
+   "p50": 18.1,
+   "p95": 29.6
+  },
+  "providers": {
+   "cloudflare": {
+    "calls": 804,
+    "err": 0,
+    "err_rate": 0.0,
+    "ok": 804,
+    "p50_ms": 719,
+    "p95_ms": 2093
+   },
+   "deepseek": {
+    "calls": 0,
+    "err": 0,
+    "err_rate": null,
+    "ok": 0,
+    "p50_ms": null,
+    "p95_ms": null
+   },
+   "gemini": {
+    "calls": 909,
+    "err": 15,
+    "err_rate": 0.017,
+    "ok": 894,
+    "p50_ms": 613,
+    "p95_ms": 4911
+   },
+   "groq": {
+    "calls": 2168,
+    "err": 0,
+    "err_rate": 0.0,
+    "ok": 2168,
+    "p50_ms": 433,
+    "p95_ms": 735
+   }
+  },
+  "vs_rules": {
+   "cloudflare": {
+    "err": 0,
+    "false_alarm": 0.27,
+    "fn": 21,
+    "fp": 115,
+    "recall": 0.62,
+    "tn": 318,
+    "tp": 35
+   },
+   "gemini": {
+    "err": 13,
+    "false_alarm": 0.0,
+    "fn": 27,
+    "fp": 2,
+    "recall": 0.44,
+    "tn": 407,
+    "tp": 21
+   },
+   "groq": {
+    "err": 0,
+    "false_alarm": 0.0,
+    "fn": 19,
+    "fp": 0,
+    "recall": 0.17,
+    "tn": 5,
+    "tp": 4
+   }
+  }
+ },
+ "count": 32,
+ "dialogs": "ok",
+ "removed_by_rule": 0,
+ "since_utc": "2026-11-09 03:31",
+ "sources": {
+  "1": "ok",
+  "10": "ok",
+  "11": "ok",
+  "12": "ok",
+  "13": "ok",
+  "14": "ok",
+  "15": "ok",
+  "16": "ok",
+  "17": "ok",
+  "18": "ok",
+  "19": "ok",
+  "2": "ok",
+  "20": "ok",
+  "21": "ok",
+  "22": "ok",
+  "23": "ok",
+  "24": "ok",
+  "25": "ok",
+  "26": "ok",
+  "27": "ok",
+  "28": "ok",
+  "29": "ok",
+  "3": "ok",
+  "30": "ok",
+  "31": "ok",
+  "32": "ok",
+  "4": "ok",
+  "5": "ok",
+  "6": "ok",
+  "7": "ok",
+  "8": "ok",
+  "9": "ok"
+ },
+ "stats": {
+  "ad": 1,
+  "ai_ad": 0,
+  "ai_banned": 0,
+  "ai_calls": 0,
+  "ai_caught": 0,
+  "ai_errors": 0,
+  "ai_rescued": 0,
+  "ai_skipped": 0,
+  "bale_outage": 28,
+  "dropword": 4,
+  "duplicate": 0,
+  "emptied_by_cleaner": 0,
+  "failed": 28,
+  "gate_calls": 28,
+  "gate_errors": 0,
+  "last_fail": "RuntimeError: Bale HTTP 404 on sendMessage",
+  "no_text": 1,
+  "not_news": 6,
+  "profanity": 0,
+  "seen": 42,
+  "sent": 0,
+  "sh_dup_ai_dup": 0,
+  "sh_dup_ai_new": 0,
+  "sh_gate_ad": 0,
+  "sh_gate_banned": 0,
+  "sh_new_ai_dup": 0,
+  "sh_new_ai_new": 0,
+  "too_old": 2
+ },
+ "stats_total": {
+  "ad": 334,
+  "ai_ad": 17,
+  "ai_banned": 30,
+  "ai_calls": 45,
+  "ai_caught": 3,
+  "ai_errors": 0,
+  "ai_rescued": 3,
+  "ai_skipped": 2,
+  "bale_outage": 1416,
+  "dropword": 368,
+  "duplicate": 7,
+  "emptied_by_cleaner": 4,
+  "failed": 3944,
+  "gate_calls": 2803,
+  "gate_errors": 0,
+  "no_text": 139,
+  "not_news": 304,
+  "profanity": 22,
+  "seen": 6825,
+  "sent": 17,
+  "sh_dup_ai_dup": 0,
+  "sh_dup_ai_new": 3,
+  "sh_gate_ad": 17,
+  "sh_gate_banned": 30,
+  "sh_new_ai_dup": 3,
+  "sh_new_ai_new": 39,
+  "too_old": 1639
+ },
+ "uptime_min": 132
+}
