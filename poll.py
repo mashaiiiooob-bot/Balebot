@@ -13,6 +13,8 @@ import time
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
+from telethon.tl.functions.messages import CheckChatInviteRequest
+from telethon.tl.types import ChatInviteAlready
 
 import settings
 from bale_client import BaleClient
@@ -21,6 +23,9 @@ from state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
+
+
+INVITE_RE = re.compile(r"(?:t\.me|telegram\.me)/(?:joinchat/|\+)([\w-]+)", re.I)
 
 
 def source_label(entity):
@@ -144,8 +149,16 @@ async def resolve_sources(client):
     entities = []
     for index, source in enumerate(settings.get_sources(), 1):
         try:
-            target = int(source) if re.fullmatch(r"-?\d+", source) else source
-            entity = await client.get_entity(target)
+            invite = INVITE_RE.search(source)
+            if invite:
+                # پارسر Telethon هش‌های دارای «-» را نمی‌پذیرد؛ خودمان بررسی می‌کنیم.
+                res = await client(CheckChatInviteRequest(invite.group(1)))
+                if not isinstance(res, ChatInviteAlready):
+                    raise ValueError("account is not a member of this private chat")
+                entity = res.chat
+            else:
+                target = int(source) if re.fullmatch(r"-?\d+", source) else source
+                entity = await client.get_entity(target)
             entities.append(entity)
             status["sources"][str(index)] = "ok"
             log.info("Source ready: %s", source_label(entity))
@@ -207,5 +220,20 @@ async def run():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_bale():
+    """یک پیام آزمایشی به مقصد بله می‌فرستد و نتیجه را در status.json می‌نویسد."""
+    token = os.environ.get("BALE_BOT_TOKEN", "").strip()
+    result = "ok"
+    try:
+        BaleClient(token).send_text(settings.BALE_DESTINATION, "✅ تست اتصال Balebot — این پیام آزمایشی است.")
+    except Exception as exc:
+        result = f"{type(exc).__name__}: {exc}"[:160]
+    write_status({"bale_test": result})
+    log.info("Bale test: %s", "ok" if result == "ok" else "failed")
+    return 0 if result == "ok" else 5
+
+
 if __name__ == "__main__":
+    if "--test-bale" in sys.argv:
+        sys.exit(test_bale())
     sys.exit(asyncio.run(run()))

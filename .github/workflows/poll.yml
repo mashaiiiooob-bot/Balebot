@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      test_bale:
+        description: "فقط یک پیام آزمایشی به بله بفرست"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,7 +38,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Poll Telegram and forward to Bale
-        run: python poll.py
+        run: python poll.py ${{ github.event.inputs.test_bale == 'true' && '--test-bale' || '' }}
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
