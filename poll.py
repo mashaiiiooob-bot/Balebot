@@ -1,6 +1,7 @@
 """بررسی دوره‌ای کانال‌های تلگرام و ارسال خبرها به بله (برای GitHub Actions)."""
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
@@ -117,10 +118,28 @@ async def process_source(client, bale, state, entity, tmpdir):
         state.save()
 
 
+def write_status(info):
+    """وضعیت غیرحساس برای عیب‌یابی (نوع خطاها) در کنار state ذخیره می‌شود."""
+    try:
+        path = os.path.join(os.path.dirname(settings.STATE_FILE) or ".", "status.json")
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(info, fh, ensure_ascii=False, indent=1, sort_keys=True)
+    except OSError:
+        pass
+
+
+def safe_err(exc, source):
+    msg = str(exc).replace(source, "<src>")[:160]
+    return f"{type(exc).__name__}: {msg}"
+
+
 async def resolve_sources(client):
+    status = {"dialogs": "ok", "sources": {}}
     try:
         await client.get_dialogs()  # کش کردن موجودیت‌ها؛ از resolve مکرر یوزرنیم جلوگیری می‌کند
     except Exception as exc:
+        status["dialogs"] = safe_err(exc, "")
         log.warning("get_dialogs failed: %s", type(exc).__name__)
     entities = []
     for index, source in enumerate(settings.get_sources(), 1):
@@ -128,10 +147,13 @@ async def resolve_sources(client):
             target = int(source) if re.fullmatch(r"-?\d+", source) else source
             entity = await client.get_entity(target)
             entities.append(entity)
+            status["sources"][str(index)] = "ok"
             log.info("Source ready: %s", source_label(entity))
         except Exception as exc:
+            status["sources"][str(index)] = safe_err(exc, source)
             # عمداً خود منبع (ممکن است لینک خصوصی باشد) چاپ نمی‌شود؛ لاگ عمومی است.
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
+    write_status(status)
     return entities
 
 
