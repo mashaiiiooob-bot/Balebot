@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 # فقط یک اجرا در هر لحظه؛ اجرای بعدی صف می‌شود تا بلافاصله پس از پایان قبلی شروع شود (کمترین فاصله)
 concurrency:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +39,14 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Poll Telegram and forward to Bale
-        run: python poll.py ${{ github.event.inputs.test_bale == 'true' && '--test-bale' || '' }}
+        id: poll
+        run: |
+          ( while sleep 60; do bash save_state.sh || true; done ) &
+          SAVER=$!
+          python poll.py ${{ github.event.inputs.test_bale == 'true' && '--test-bale' || '' }}
+          CODE=$?
+          kill $SAVER 2>/dev/null || true
+          exit $CODE
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
@@ -53,12 +61,12 @@ jobs:
 
       - name: Save state
         if: always()
-        working-directory: state
-        run: |
-          git config user.name "balebot-state"
-          git config user.email "balebot-state@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit --amend -q -m "state"
-            git push -q --force origin HEAD:state
-          fi
+        run: bash save_state.sh
+
+      # اجرای بعدی را بلافاصله شروع می‌کند تا به cron گیت‌هاب وابسته نباشیم.
+      # فقط وقتی اجرا موفق بوده؛ در خطا cron دوباره راه می‌اندازد (جلوگیری از حلقه‌ی خطا).
+      - name: Chain next run
+        if: steps.poll.outcome == 'success' && github.event.inputs.test_bale != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run poll.yml --ref "${{ github.ref_name }}" -R "${{ github.repository }}"

@@ -11,8 +11,8 @@ SIGNATURE = _get("SIGNATURE", "✍️  F16\n\n⚔️ @Bale_Dr")
 STATE_FILE = _get("STATE_FILE", "state/state.json")
 
 # مدت زنده ماندن هر اجرا و فاصله‌ی بررسی‌ها (ثانیه)
-LOOP_SECONDS = int(_get("LOOP_SECONDS", "300"))
-POLL_INTERVAL = int(_get("POLL_INTERVAL", "15"))
+LOOP_SECONDS = int(_get("LOOP_SECONDS", "19800"))
+POLL_INTERVAL = int(_get("POLL_INTERVAL", "20"))
 # تعداد پیام اخیری که فقط در اولین اجرا (بدون checkpoint) ارسال می‌شود؛ 0 یعنی از اکنون به بعد
 BACKFILL_LIMIT = int(_get("BACKFILL_LIMIT", "0"))
 MAX_FILE_MB = 45

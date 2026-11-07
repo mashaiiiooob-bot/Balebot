@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
 from telethon import utils
@@ -235,7 +235,16 @@ async def run():
             log.error("No source could be resolved.")
             return 4
 
+        # رویداد تلگرام: به‌محض رسیدن پیام جدید حلقه بیدار می‌شود (تأخیر حدود ۱ ثانیه)
+        wake = asyncio.Event()
+
+        @client.on(events.NewMessage(chats=entities))
+        async def _on_new_message(event):
+            wake.set()
+
+        wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی
         while True:
+            wake.clear()
             for entity in await changed_entities(client, state, entities):
                 try:
                     await process_source(client, bale, state, entity, tmpdir)
@@ -250,7 +259,11 @@ async def run():
             state.save()
             if time.monotonic() + settings.POLL_INTERVAL >= deadline:
                 break
-            await asyncio.sleep(settings.POLL_INTERVAL)
+            # تا رویداد جدید بیاید منتظر می‌ماند؛ POLL_INTERVAL فقط پشتیبان است
+            try:
+                await asyncio.wait_for(wake.wait(), timeout=settings.POLL_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
         return 0
     finally:
         state.save()
