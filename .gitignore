@@ -1,0 +1,9 @@
+config.py
+.env
+*.session
+*.session-journal
+*.sqlite3
+*.db
+downloads/
+__pycache__/
+*.py[cod]
