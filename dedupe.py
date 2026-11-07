@@ -47,7 +47,12 @@ def signature(text):
     return {"w": words, "n": nums}
 
 
-def is_duplicate(sig, entries):
+def is_duplicate(sig, entries, now=None):
+    """پیام تازه (a) تکراری است اگر: ۱) تقریباً هم‌اندازه و بسیار شبیه به یک پیام قبلی باشد،
+    ۲) خودش «تیتر/خلاصه‌ی» پیامی قبلی باشد (واژه‌هایش تقریباً همه در آن پیام قبلی هست)؛ اگر پیام تازه
+    بسیار مفصل‌تر از قبلی باشد، اطلاعات بیشتری دارد و ارسال می‌شود."""
+    import time as _t
+    now = _t.time() if now is None else now
     a, an = set(sig["w"]), set(sig["n"])
     if not a:
         return False
@@ -57,10 +62,10 @@ def is_duplicate(sig, entries):
             continue  # عددهای متفاوت (مثلاً قیمت دیگر) = خبر دیگر
         inter = len(a & b)
         small = min(len(a), len(b))
-        if small < 5:
-            if a == b:
-                return True
-            continue
-        if inter / small >= 0.7 and inter / len(a | b) >= 0.4:
+        if small >= 5 and inter / small >= 0.7 and inter / len(a | b) >= 0.35:
+            return True
+        if len(a) <= len(b) and inter >= 3 and inter / len(a) >= 0.85 and now - e.get("t", 0) <= 21600:
+            return True  # تیتر کوتاهِ پیامی که تا ۶ ساعت پیش فرستاده‌ایم
+        if small < 5 and a == b:
             return True
     return False

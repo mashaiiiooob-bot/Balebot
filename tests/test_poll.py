@@ -226,3 +226,17 @@ assert clean_message(msg, None, [], settings.BLOCKLIST) == "مدارس تهرا�
 for k in ("DROP_WORDS", "DROP_WORDS_EXTRA", "BLOCKLIST", "BLOCKLIST_EXTRA"): os.environ.pop(k)
 importlib.reload(settings)
 print("EXTRA OK")
+
+# ---------- تیتر کوتاه داخل خبر مفصل ----------
+now = time.time()
+long_msg = "تعطیلی مدارس شهر تهران فردا شنبه به دلیل آلودگی هوا اعلام شد و کلاس‌ها غیرحضوری برگزار می‌شود"
+headline = "تعطیلی مدارس تهران فردا"   # ۳ واژه‌ی اصلی، همه در خبر مفصل هست
+sl, sh = dedupe.signature(long_msg), dedupe.signature(headline)
+assert dedupe.is_duplicate(sh, [{"t": now, **sl}], now)            # تیتر بعد از خبر مفصل: تکراری
+assert not dedupe.is_duplicate(sl, [{"t": now, **sh}], now)        # خبر مفصل بعد از تیتر: اطلاعات بیشتر، ارسال شود
+assert not dedupe.is_duplicate(sh, [{"t": now - 30000, **sl}], now)  # بیش از ۶ ساعت قبل: خبر دیگری است
+other = dedupe.signature("تعطیلی مدارس شهر مشهد به دلیل بارش برف اعلام شد")
+assert not dedupe.is_duplicate(other, [{"t": now, **sl}], now)     # شهر دیگر = خبر دیگر
+two = dedupe.signature("تعطیلی مدارس")                               # ۲ واژه: فقط برابر دقیق
+assert not dedupe.is_duplicate(two, [{"t": now, **sl}], now)
+print("DEDUPE2 OK")

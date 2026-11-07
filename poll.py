@@ -169,7 +169,7 @@ def classify(raw, text, state):
     if not is_news(text):
         return "not_news", None
     sig = signature(text)
-    if is_duplicate(sig, state.recent_seen(time.time())):
+    if is_duplicate(sig, state.recent_seen(time.time()), time.time()):
         return "duplicate", None
     return None, sig
 
