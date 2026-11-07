@@ -164,7 +164,7 @@ def classify(raw, text, state):
         return "emptied_by_cleaner", None
     if is_ad(raw) or is_ad(text):
         return "ad", None
-    if has_dropword(text, settings.DROP_WORDS):
+    if has_dropword(raw, settings.DROP_WORDS) or has_dropword(text, settings.DROP_WORDS):  # متن خام هم چک می‌شود (اسم‌هایی که پاک‌سازی حذف می‌کند)
         return "dropword", None
     if not is_news(text):
         return "not_news", None

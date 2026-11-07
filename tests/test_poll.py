@@ -250,3 +250,14 @@ assert settings.confuse("ايران اينترنشنال\u200c") == settings.con
 for k in ("SOURCES", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("REMOVE2 OK")
+
+# ---------- نهایی: واژه‌های ممنوعه کاربر + ایران اینترنشنال ----------
+FINAL = ["پهلوی","بی بی","بی‌بی","اتاق","کیر","رایگان","عجب","بدو","آرایش","شاه","نیوشا صارمی","حضرت","اعلی","شاهزاده",
+         "وحید","یاشار","ایران اینترنشنال","iran international","iranintltv","iranintitv","iranintl"]
+settings.DROP_WORDS[:] = FINAL
+st3 = State(tempfile.mkdtemp() + "/s3.json")
+for bad in ["شاهزاده رضا پهلوی", "به گزارش ایران اینترنشنال حمله شد", "خبر فوری\n@IranintlTV", "خبر فوری | IranintITV",
+            "Iran International reported attack", "حضرت علی", "مقام اعلی", "خبر فوری از بی‌بی‌سی", "اتاق فکر"]:
+    assert poll.classify(bad, clean_message(bad, None, [], ["IranintlTV", "IranintITV"]), st3)[0] == "dropword", bad
+assert poll.classify("خبر فوری از سپاه پاسداران", "خبر فوری از سپاه پاسداران", st3)[0] is None
+print("FINAL OK")
