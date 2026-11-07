@@ -18,6 +18,7 @@ from telethon.tl.types import ChatInviteAlready
 
 import settings
 from bale_client import BaleClient
+from cleaner import clean_text
 from news_filter import is_news
 from state import State
 
@@ -38,11 +39,10 @@ def key_for(entity):
     return hashlib.sha256(str(entity.id).encode()).hexdigest()[:16]
 
 
-def build_caption(text, source):
+def build_caption(text):
     parts = []
     if text:
         parts.append(text.strip())
-    parts.append(f"منبع: {source}")
     parts.append(settings.SIGNATURE)
     return "\n\n".join(parts)
 
@@ -58,8 +58,8 @@ def media_kind(message):
     return "document"
 
 
-async def forward(bale, message, label, tmpdir):
-    caption = build_caption(message.message or "", label)
+async def forward(bale, message, text, tmpdir):
+    caption = build_caption(text)
     media_path = None
     try:
         size = getattr(message.file, "size", 0) or 0
@@ -87,7 +87,8 @@ async def fetch_new(client, entity, last_id):
 
 async def process_source(client, bale, state, entity, tmpdir):
     key = key_for(entity)
-    label = source_label(entity)
+    tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
+    names = [getattr(entity, "title", None), getattr(entity, "username", None)]
     last = state.last_id(key)
 
     if last:
@@ -98,22 +99,23 @@ async def process_source(client, bale, state, entity, tmpdir):
         latest = await client.get_messages(entity, limit=1)
         if latest:
             state.set_last_id(key, latest[0].id)
-            log.info("First run for %s: starting from now", label)
+            log.info("First run for source %s: starting from now", tag)
         return
 
     for msg in messages:
         if msg.id <= last:
             continue
-        if is_news(msg.message or ""):
+        text = clean_text(msg.message or "", names)
+        if is_news(text):
             try:
-                await forward(bale, msg, label, tmpdir)
-                log.info("Forwarded %s message_id=%s", label, msg.id)
+                await forward(bale, msg, text, tmpdir)
+                log.info("Forwarded source=%s message_id=%s", tag, msg.id)
             except FloodWaitError:
                 raise
             except Exception as exc:
                 state.add_fail(key, msg.id)
                 fails = state.fail_count(key, msg.id)
-                log.error("Forward failed %s id=%s (%d/%d): %s", label, msg.id, fails,
+                log.error("Forward failed source=%s id=%s (%d/%d): %s", tag, msg.id, fails,
                           settings.MAX_FAILS, type(exc).__name__)
                 state.save()
                 if fails < settings.MAX_FAILS:
@@ -161,7 +163,7 @@ async def resolve_sources(client):
                 entity = await client.get_entity(target)
             entities.append(entity)
             status["sources"][str(index)] = "ok"
-            log.info("Source ready: %s", source_label(entity))
+            log.info("Source #%d ready", index)
         except Exception as exc:
             status["sources"][str(index)] = safe_err(exc, source)
             # عمداً خود منبع (ممکن است لینک خصوصی باشد) چاپ نمی‌شود؛ لاگ عمومی است.
@@ -208,7 +210,7 @@ async def run():
                         return 0
                     await asyncio.sleep(exc.seconds + 1)
                 except Exception as exc:
-                    log.error("Source %s failed: %s", source_label(entity), type(exc).__name__)
+                    log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
             if time.monotonic() + settings.POLL_INTERVAL >= deadline:
                 break

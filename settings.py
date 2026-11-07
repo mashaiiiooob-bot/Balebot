@@ -7,7 +7,7 @@ def _get(name, default):
     return value.strip() if value and value.strip() else default
 
 BALE_DESTINATION = _get("BALE_DESTINATION", "@maklpo")
-SIGNATURE = _get("SIGNATURE", "⚔️ @Bale_Dr")
+SIGNATURE = _get("SIGNATURE", "✍️  F16\n\n⚔️ @Bale_Dr")
 STATE_FILE = _get("STATE_FILE", "state/state.json")
 
 # مدت زنده ماندن هر اجرا و فاصله‌ی بررسی‌ها (ثانیه)
