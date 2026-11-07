@@ -13,6 +13,10 @@ SAFE_WORDS = {"breaking", "news", "update", "urgent", "live", "alert", "video", 
 CREDIT_LABEL = r"(?:منبع|source|via|ref|credit)"
 CREDIT_EMPTY = re.compile(rf"^[\W_]*{CREDIT_LABEL}\s*[:：\-–]?\s*[\W_]*$", re.I)
 CREDIT_HANDLE = re.compile(rf"^[\W_]*{CREDIT_LABEL}\s*[:：\-–]\s*(?:{HANDLE_TOKEN}[\W_]*){{1,2}}$", re.I)
+EDGE_SEP = re.compile(r"^[\s|•·—–\-:/،,؛;]+|[\s|•·—–\-:/،,؛;]+$")
+SHORT_TAG = re.compile(r"^[A-Za-z0-9]{2,8}$")
+PIPE_TAG_LINE = re.compile(r"^[\W_]*[|•·]\s*[A-Za-z0-9]{2,8}[\W_]*$")
+CAPS_TAG_LINE = re.compile(r"^[\W_]*[A-Z0-9]{2,6}[\W_]*$")
 RTL_RE = re.compile(r"[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
 
 _LINK_TYPES = {"MessageEntityTextUrl", "MessageEntityUrl", "MessageEntityMention", "MessageEntityMentionName"}
@@ -126,12 +130,19 @@ def clean_text(text, names=(), blocklist=()):
         new = _strip_terms(new, terms)
         new = re.sub(r"[ \t]{2,}", " ", new).strip()
         if new != line.strip():
+            new = EDGE_SEP.sub("", new)  # جداکننده‌ی یتیم (مثل «|») بعد از حذف نام
             if not re.search(r"\w", new):
                 continue  # باقی‌مانده فقط نماد/ایموجی است
+            if SHORT_TAG.match(new):
+                continue  # فقط یک برچسب کوتاه لاتین (مثل TCH) مانده است
             if CREDIT_EMPTY.match(new):
                 continue  # «منبع:» که نامش حذف شد
         if CREDIT_HANDLE.match(new):
             continue  # «منبع: someHandle»
+        if PIPE_TAG_LINE.match(new):
+            continue  # خطی مثل «| TCH»
+        if rtl_message and CAPS_TAG_LINE.match(new) and new.strip(" |•·-—–").lower() not in SAFE_WORDS:
+            continue  # خطی که فقط یک مخفف بزرگ لاتین است
         if rtl_message and HANDLE_LINE.match(new):
             words = re.findall(HANDLE_TOKEN, new)
             if not any(w.lower() in SAFE_WORDS for w in words):

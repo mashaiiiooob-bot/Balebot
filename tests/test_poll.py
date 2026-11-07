@@ -129,3 +129,18 @@ assert clean_message(en, None, [], []) == en
 t = "اخبار ایران امروز اعلام شد"
 assert clean_message(t, None, ["اخبار | ایران"], []) == t, clean_message(t, None, ["اخبار | ایران"], [])
 print("USER EXAMPLES OK")
+
+# ---------- برچسب‌های کوتاه مثل «| TCH» ----------
+for tail in ("| TCH", "|TCH", "TCH", "• TCH", "پرشین ترند | TCH", "🔴 | TCH"):
+    got = clean_message(body + "\n" + tail, None, [], ["TCH", "پرشین ترند"])
+    assert got == body, (tail, got)
+    if "پرشین" in tail:
+        continue  # اسم فارسی ناشناس فقط با بلاک‌لیست قابل حذف است
+    got2 = clean_message(body + "\n" + tail, None, [], [])  # حتی بدون بلاک‌لیست
+    assert "tch" not in got2.lower() and body in got2 and "|" not in got2.split("\n")[-1], (tail, got2)
+assert clean_message("متن خبر مهم | TCH", None, [], ["TCH"]) == "متن خبر مهم"
+# آسیب به متن عادی نزند
+assert clean_message("نشست OPEC برگزار شد", None, [], []) == "نشست OPEC برگزار شد"
+assert clean_message("خبر\nBREAKING", None, [], []) == "خبر\nBREAKING"
+assert clean_message("قیمت | ۱۰۰ دلار", None, [], []) == "قیمت | ۱۰۰ دلار"
+print("TAG OK")
