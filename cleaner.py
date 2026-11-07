@@ -149,7 +149,7 @@ def clean_text(text, names=(), blocklist=()):
         if rtl_message and HANDLE_LINE.match(new):
             words = re.findall(HANDLE_TOKEN, new)
             if not any(w.lower() in SAFE_WORDS for w in words):
-                continue  # خطی که فقط آیدی لاتین است (مثل IranintlTV)
+                continue  # خطی که فقط آیدی لاتین است (مثل RadioxlTV)
         lines.append(new)
     out = "\n".join(lines)
     out = re.sub(r"\n{3,}", "\n\n", out)

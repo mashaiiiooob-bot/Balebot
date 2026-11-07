@@ -82,24 +82,24 @@ print("PRIVACY OK")
 
 # ---------- نمونه‌های واقعی کاربر: پایین‌نویس کانال‌ها ----------
 from cleaner import clean_message
-BL = ["پرشین ترند | متفاوت‌ترین کانال نظامی", "IranintlTV", "radiofarda", "bbcpersian", "Indypersian"]
+BL = ["کانال نمونه | شعار نمونه برای آزمایش", "RadioxlTV", "outletone", "outlettwo", "outletthree"]
 body = "🔴 فوری: ارتش اعلام کرد رزمایش جدید آغاز شد\nجزئیات بیشتر در ادامه منتشر می‌شود"
 
 # ۱) پایین‌نویس متنی (بدون @ و بدون لینک)
-msg = body + "\n\nپرشین ترند | متفاوت‌ترین کانال نظامی\nIranintlTV\nradiofarda\n\nbbcpersian\nIndypersian"
+msg = body + "\n\nکانال نمونه | شعار نمونه برای آزمایش\nRadioxlTV\noutletone\n\noutlettwo\noutletthree"
 out = clean_message(msg, None, [], BL)
-for w in ("پرشین ترند", "متفاوت", "iranintl", "radiofarda", "bbcpersian", "indypersian"):
+for w in ("کانال نمونه", "شعار نمونه", "radiox", "outletone", "outlettwo", "outletthree"):
     assert w not in out.lower(), (w, out)
 assert out == body, repr(out)
 
 # ۲) حتی بدون بلاک‌لیست: خط‌هایی که فقط آیدی لاتین هستند حذف شوند
 out2 = clean_message(msg, None, [], [])
-for w in ("iranintl", "radiofarda", "bbcpersian", "indypersian"):
+for w in ("radiox", "outletone", "outlettwo", "outletthree"):
     assert w not in out2.lower(), (w, out2)
 
 # ۳) نام کانال با شعار، در حالتی که فقط عنوان کانال دیگری (scrub) داده شده
-out3 = clean_message(body + "\n🆔 پرشین ترند | متفاوت‌ترین کانال نظامی", None, ["پرشین ترند | متفاوت‌ترین کانال نظامی"], [])
-assert "پرشین" not in out3 and "متفاوت" not in out3 and out3 == body, repr(out3)
+out3 = clean_message(body + "\n🆔 کانال نمونه | شعار نمونه برای آزمایش", None, ["کانال نمونه | شعار نمونه برای آزمایش"], [])
+assert "نمونه" not in out3 and "شعار نمونه" not in out3 and out3 == body, repr(out3)
 
 # ۴) لینک‌های پنهان (entity): خط کاملاً لینکِ تلگرامی حذف شود، متن اصلی بماند
 class TU:  # MessageEntityTextUrl
@@ -119,7 +119,7 @@ e6 = [TU(len("😀🔴 خبر\n".encode("utf-16-le")) // 2, len("منبع ما")
 assert clean_message(text6, e6, [], []) == "😀🔴 خبر", repr(clean_message(text6, e6, [], []))
 
 # ۵) خط «منبع: آیدی» حذف شود؛ منبع خبری فارسی عادی باقی بماند
-assert clean_message("خبر\nمنبع: bbcpersian", None, [], []) == "خبر"
+assert clean_message("خبر\nمنبع: outlettwo", None, [], []) == "خبر"
 assert clean_message("خبر\nمنبع: وزارت دفاع", None, [], []) == "خبر\nمنبع: وزارت دفاع"
 
 # ۶) پیام انگلیسی عادی خراب نشود
@@ -131,10 +131,10 @@ assert clean_message(t, None, ["اخبار | ایران"], []) == t, clean_messa
 print("USER EXAMPLES OK")
 
 # ---------- برچسب‌های کوتاه مثل «| TCH» ----------
-for tail in ("| TCH", "|TCH", "TCH", "• TCH", "پرشین ترند | TCH", "🔴 | TCH"):
-    got = clean_message(body + "\n" + tail, None, [], ["TCH", "پرشین ترند"])
+for tail in ("| TCH", "|TCH", "TCH", "• TCH", "کانال نمونه | TCH", "🔴 | TCH"):
+    got = clean_message(body + "\n" + tail, None, [], ["TCH", "کانال نمونه"])
     assert got == body, (tail, got)
-    if "پرشین" in tail:
+    if "نمونه" in tail:
         continue  # اسم فارسی ناشناس فقط با بلاک‌لیست قابل حذف است
     got2 = clean_message(body + "\n" + tail, None, [], [])  # حتی بدون بلاک‌لیست
     assert "tch" not in got2.lower() and body in got2 and "|" not in got2.split("\n")[-1], (tail, got2)
@@ -147,12 +147,12 @@ print("TAG OK")
 
 # ---------- افزودن/حذف منبع بدون دیدن Secret اصلی ----------
 import importlib
-os.environ["SOURCES"] = "https://t.me/good_one\n@iran_charshansboriii\n-1001234567\nhttps://t.me/+AbCdEf123"
-os.environ["SOURCES_EXTRA"] = "https://t.me/iran_charshanbsoriii\nhttps://t.me/Good_One"
-os.environ["SOURCES_REMOVE"] = "iran_charshansboriii"
+os.environ["SOURCES"] = "https://t.me/good_one\n@typo_source_name\n-1001234567\nhttps://t.me/+AbCdEf123"
+os.environ["SOURCES_EXTRA"] = "https://t.me/good_source_one\nhttps://t.me/Good_One"
+os.environ["SOURCES_REMOVE"] = "typo_source_name"
 importlib.reload(settings)
 got = settings.get_sources()
-assert got == ["https://t.me/good_one", "-1001234567", "https://t.me/+AbCdEf123", "https://t.me/iran_charshanbsoriii"], got
+assert got == ["https://t.me/good_one", "-1001234567", "https://t.me/+AbCdEf123", "https://t.me/good_source_one"], got
 for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("SOURCES OK")
@@ -198,30 +198,30 @@ assert poll.classify("خبر فوری تبلیغات", "خبر فوری تبلی
 st2 = State(st.path); assert poll.classify(B, B, st2)[0] == "duplicate"  # بعد از ریستارت هم یادش می‌ماند
 assert "سپاه" not in open(st.path, encoding="utf-8").read()  # محتوا در state نیست
 
-# سربرگ ir_vasl و «🔴 | اخبار»
-head = "@ir_vasl\n\nتعطیلی وصل | تنها رسانه در ارتباط با استانداری ها👀⚡🔥\n\nمدارس شهر فردا تعطیل است\n\n🔴 | اخبار"
-got = clean_message(head, None, ["ir_vasl"], ["تعطیلی وصل | تنها رسانه در ارتباط با استانداری ها"])
+# سربرگ good_source_three و «🔴 | اخبار»
+head = "@good_source_three\n\nعنوان سربرگ | شعار سربرگ نمونه👀⚡🔥\n\nمدارس شهر فردا تعطیل است\n\n🔴 | اخبار"
+got = clean_message(head, None, ["good_source_three"], ["عنوان سربرگ | شعار سربرگ نمونه"])
 assert got == "مدارس شهر فردا تعطیل است", repr(got)
 assert clean_message("متن\n🔴 | اخبار", None, [], []) == "متن"
 assert clean_message("قیمت | ۱۰۰ دلار", None, [], []) == "قیمت | ۱۰۰ دلار"
 
 # حذف منبع با یوزرنیم/عنوان
-os.environ["SOURCES"] = "https://t.me/TweetyChannel\n@IranintlTV\n-100123\nhttps://t.me/keep_me"
-os.environ["SOURCES_EXTRA"] = "https://t.me/Akhbare_madrs\nhttps://t.me/ir_vasl"
-os.environ["SOURCES_REMOVE"] = "IranintlTV\nTweetyChannel\nایران اینترنشنال\ntweety"
+os.environ["SOURCES"] = "https://t.me/SampleChannel\n@RadioxlTV\n-100123\nhttps://t.me/keep_me"
+os.environ["SOURCES_EXTRA"] = "https://t.me/good_source_two\nhttps://t.me/good_source_three"
+os.environ["SOURCES_REMOVE"] = "RadioxlTV\nSampleChannel\nرادیو اکس اینترنشنال\nsample"
 importlib.reload(settings)
-assert settings.get_sources() == ["-100123", "https://t.me/keep_me", "https://t.me/Akhbare_madrs", "https://t.me/ir_vasl"], settings.get_sources()
+assert settings.get_sources() == ["-100123", "https://t.me/keep_me", "https://t.me/good_source_two", "https://t.me/good_source_three"], settings.get_sources()
 for k in ("SOURCES", "SOURCES_EXTRA", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("NEW FILTERS OK")
 
 # ---------- وحید + «اولین چنلی که خبر تعطیلی ...» ----------
 os.environ["DROP_WORDS"] = "شاه"; os.environ["DROP_WORDS_EXTRA"] = "وحید"
-os.environ["BLOCKLIST"] = "TCH"; os.environ["BLOCKLIST_EXTRA"] = "اولین چنلی که خبر تعطیلی رو میذاره"
+os.environ["BLOCKLIST"] = "TCH"; os.environ["BLOCKLIST_EXTRA"] = "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید"
 importlib.reload(settings)
-assert settings.DROP_WORDS == ["شاه", "وحید"] and "اولین چنلی که خبر تعطیلی رو میذاره" in settings.BLOCKLIST
+assert settings.DROP_WORDS == ["شاه", "وحید"] and "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید" in settings.BLOCKLIST
 assert has_dropword("وحید گفت مدارس تعطیل است", settings.DROP_WORDS) and not has_dropword("وحیدی گفت", settings.DROP_WORDS)
-msg = "مدارس تهران فردا تعطیل است\n\nاولین چنلی که خبر تعطیلی رو میذاره❤️👇"
+msg = "مدارس تهران فردا تعطیل است\n\nجمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید❤️👇"
 assert clean_message(msg, None, [], settings.BLOCKLIST) == "مدارس تهران فردا تعطیل است", repr(clean_message(msg, None, [], settings.BLOCKLIST))
 for k in ("DROP_WORDS", "DROP_WORDS_EXTRA", "BLOCKLIST", "BLOCKLIST_EXTRA"): os.environ.pop(k)
 importlib.reload(settings)
@@ -242,22 +242,22 @@ assert not dedupe.is_duplicate(two, [{"t": now, **sl}], now)
 print("DEDUPE2 OK")
 
 # ---------- حذف منبع با حروف هم‌شکل و نوشتار فارسی متفاوت ----------
-os.environ["SOURCES"] = "@IranintITV\nhttps://t.me/IranintlTV\nt.me/IRANINT1TV\nhttps://t.me/keep_me"
-os.environ["SOURCES_REMOVE"] = "IranintITV"
+os.environ["SOURCES"] = "@RadioxITV\nhttps://t.me/RadioxlTV\nt.me/RADIOX1TV\nhttps://t.me/keep_me"
+os.environ["SOURCES_REMOVE"] = "RadioxITV"
 importlib.reload(settings)
 assert settings.get_sources() == ["https://t.me/keep_me"], settings.get_sources()
-assert settings.confuse("ايران اينترنشنال\u200c") == settings.confuse("ایران اینترنشنال")
+assert settings.confuse("رادیو اکس اينترنشنال\u200c") == settings.confuse("رادیو اکس اینترنشنال")
 for k in ("SOURCES", "SOURCES_REMOVE"): os.environ.pop(k)
 importlib.reload(settings)
 print("REMOVE2 OK")
 
-# ---------- نهایی: واژه‌های ممنوعه کاربر + ایران اینترنشنال ----------
+# ---------- نهایی: واژه‌های ممنوعه کاربر + رادیو اکس اینترنشنال ----------
 FINAL = ["پهلوی","بی بی","بی‌بی","اتاق","کیر","رایگان","عجب","بدو","آرایش","شاه","نیوشا صارمی","حضرت","اعلی","شاهزاده",
-         "وحید","یاشار","ایران اینترنشنال","iran international","iranintltv","iranintitv","iranintl"]
+         "وحید","یاشار","رادیو اکس اینترنشنال","radio x international","radioxltv","radioxitv","radiox"]
 settings.DROP_WORDS[:] = FINAL
 st3 = State(tempfile.mkdtemp() + "/s3.json")
-for bad in ["شاهزاده رضا پهلوی", "به گزارش ایران اینترنشنال حمله شد", "خبر فوری\n@IranintlTV", "خبر فوری | IranintITV",
-            "Iran International reported attack", "حضرت علی", "مقام اعلی", "خبر فوری از بی‌بی‌سی", "اتاق فکر"]:
-    assert poll.classify(bad, clean_message(bad, None, [], ["IranintlTV", "IranintITV"]), st3)[0] == "dropword", bad
+for bad in ["شاهزاده رضا پهلوی", "به گزارش رادیو اکس اینترنشنال حمله شد", "خبر فوری\n@RadioxlTV", "خبر فوری | RadioxITV",
+            "Radio X International reported attack", "حضرت علی", "مقام اعلی", "خبر فوری از بی‌بی‌سی", "اتاق فکر"]:
+    assert poll.classify(bad, clean_message(bad, None, [], ["RadioxlTV", "RadioxITV"]), st3)[0] == "dropword", bad
 assert poll.classify("خبر فوری از سپاه پاسداران", "خبر فوری از سپاه پاسداران", st3)[0] is None
 print("FINAL OK")
