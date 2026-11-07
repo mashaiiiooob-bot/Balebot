@@ -1,30 +1,141 @@
+"""پاک‌سازی متن پیام: هر نشانه‌ای از منبع (نام، شعار، آیدی، لینک، خط‌های «منبع:») حذف می‌شود."""
 import re
 
 URL_RE = re.compile(r"tg://\S+|(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)/\S*", re.I)
 MENTION_RE = re.compile(r"(?<![\w.])@[A-Za-z]\w{3,}")
+TG_URL_RE = re.compile(r"tg://|(?:^|//|\.)(?:t\.me|telegram\.me|telegram\.dog)/", re.I)
+
+SEPARATORS = re.compile(r"[|•·—–\-:/،,؛;]+")
+HANDLE_TOKEN = r"[A-Za-z][A-Za-z0-9_]{3,31}"
+HANDLE_LINE = re.compile(rf"^[\W_]*{HANDLE_TOKEN}(?:[\W_]+{HANDLE_TOKEN})?[\W_]*$")
+SAFE_WORDS = {"breaking", "news", "update", "urgent", "live", "alert", "video", "photo",
+              "photos", "report", "exclusive", "warning", "latest", "today", "video"}
+CREDIT_LABEL = r"(?:منبع|source|via|ref|credit)"
+CREDIT_EMPTY = re.compile(rf"^[\W_]*{CREDIT_LABEL}\s*[:：\-–]?\s*[\W_]*$", re.I)
+CREDIT_HANDLE = re.compile(rf"^[\W_]*{CREDIT_LABEL}\s*[:：\-–]\s*(?:{HANDLE_TOKEN}[\W_]*){{1,2}}$", re.I)
+RTL_RE = re.compile(r"[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
+
+_LINK_TYPES = {"MessageEntityTextUrl", "MessageEntityUrl", "MessageEntityMention", "MessageEntityMentionName"}
+_NORM = str.maketrans({"ي": "ی", "ك": "ک"})
 
 
-def clean_text(text, names=()):
-    """لینک‌های تلگرام، آیدی‌ها (@...) و نام کانال منبع را از متن حذف می‌کند."""
-    variants = set()
-    for name in names:
-        name = (name or "").strip()
-        if len(name) >= 3:
-            variants.add(name)
-            variants.add(name.replace("_", " "))
-            plain = re.sub(r"[^\w\s]", "", name).strip()
-            if len(plain) >= 3:
-                variants.add(plain)
-    variants = sorted(variants, key=len, reverse=True)
+def _norm(s):
+    out = s.translate(_NORM).lower()
+    return out if len(out) == len(s) else s.lower()
+
+
+def build_terms(names=(), blocklist=()):
+    """از نام‌ها و بلاک‌لیست، همه‌ی عبارت‌هایی که باید حذف شوند را می‌سازد (شعار پشت | یا - هم جدا حذف می‌شود)."""
+    terms = set()
+    for raw in list(names) + list(blocklist):
+        raw = (raw or "").strip().lstrip("@")
+        if len(raw) < 3:
+            continue
+        terms.add(raw)
+        terms.add(raw.replace("_", " "))
+        plain = re.sub(r"[^\w\s\u200c]", "", raw).strip()
+        if len(plain) >= 3:
+            terms.add(plain)
+        parts = [p.strip() for p in SEPARATORS.split(raw)]
+        if len(parts) > 1:
+            for part in parts:
+                # قطعه‌ی عمومی تک‌کلمه‌ای (مثل «اخبار») حذف نمی‌شود؛ فقط عبارت‌های ≥۲ کلمه یا بلند
+                if len(part) >= 8 or (len(part) >= 5 and len(part.split()) >= 2):
+                    terms.add(part)
+    return sorted({_norm(t) for t in terms if len(t.strip()) >= 3}, key=len, reverse=True)
+
+
+def _strip_terms(line, terms):
+    if not terms:
+        return line
+    low = _norm(line)
+    spans = []
+    for term in terms:
+        pat = r"(?<![\w\u200c])" + re.escape(term) + r"(?![\w\u200c])"
+        spans.extend(m.span() for m in re.finditer(pat, low))
+    if not spans:
+        return line
+    spans.sort()
+    out, last = [], 0
+    for a, b in spans:
+        if a < last:
+            a = last
+        if b > a:
+            out.append(line[last:a])
+            last = b
+    out.append(line[last:])
+    return "".join(out)
+
+
+def _flags(text, entities):
+    """بر اساس entityهای تلگرام (offset بر حسب UTF-16): کدام کاراکترها لینک/منشن‌اند و کدام باید حذف شوند."""
+    n = len(text)
+    remove, linked, tg = [False] * n, [False] * n, [False] * n
+    if not entities:
+        return remove, linked, tg
+    starts, pos = [], 0
+    for ch in text:
+        starts.append(pos)
+        pos += 2 if ord(ch) > 0xFFFF else 1
+    for e in entities:
+        kind = type(e).__name__
+        if kind not in _LINK_TYPES:
+            continue
+        a, b = e.offset, e.offset + e.length
+        idx = [i for i, u in enumerate(starts) if a <= u < b]
+        if not idx:
+            continue
+        span_text = text[idx[0]:idx[-1] + 1]
+        is_tg = kind in ("MessageEntityMention", "MessageEntityMentionName")
+        if kind == "MessageEntityTextUrl":
+            is_tg = bool(TG_URL_RE.search(getattr(e, "url", "") or ""))
+        elif kind == "MessageEntityUrl":
+            is_tg = bool(TG_URL_RE.search(span_text))
+        for i in idx:
+            linked[i] = True
+            if is_tg:
+                tg[i] = True
+                remove[i] = True
+    return remove, linked, tg
+
+
+def clean_message(text, entities=None, names=(), blocklist=()):
+    """متن + entityها → متن پاک‌شده. خطی که کاملاً لینک/منشن تلگرامی یا لینک کوتاه است (پایین‌نویس کانال) حذف می‌شود."""
+    text = text or ""
+    remove, linked, tg = _flags(text, entities)
+    lines, pos = [], 0
+    for raw in text.split("\n"):
+        idx = range(pos, pos + len(raw))
+        pos += len(raw) + 1
+        if any(linked[i] for i in idx):
+            residue = "".join(ch for i, ch in zip(idx, raw) if not linked[i])
+            entirely_linked = not re.search(r"\w", residue)
+            if entirely_linked and (any(tg[i] for i in idx) or len(raw.strip()) <= 40):
+                continue
+        lines.append("".join(ch for i, ch in zip(idx, raw) if not remove[i]))
+    return clean_text("\n".join(lines), names, blocklist)
+
+
+def clean_text(text, names=(), blocklist=()):
+    terms = build_terms(names, blocklist)
+    rtl_message = bool(RTL_RE.search(text or ""))
     lines = []
     for line in (text or "").splitlines():
         new = URL_RE.sub("", line)
         new = MENTION_RE.sub("", new)
-        for name in variants:
-            new = re.sub(re.escape(name), "", new, flags=re.I)
+        new = _strip_terms(new, terms)
         new = re.sub(r"[ \t]{2,}", " ", new).strip()
-        if new != line.strip() and not re.search(r"\w", new):
-            continue  # خطی که فقط باقی‌مانده‌ی نماد/ایموجی پس از حذف است
+        if new != line.strip():
+            if not re.search(r"\w", new):
+                continue  # باقی‌مانده فقط نماد/ایموجی است
+            if CREDIT_EMPTY.match(new):
+                continue  # «منبع:» که نامش حذف شد
+        if CREDIT_HANDLE.match(new):
+            continue  # «منبع: someHandle»
+        if rtl_message and HANDLE_LINE.match(new):
+            words = re.findall(HANDLE_TOKEN, new)
+            if not any(w.lower() in SAFE_WORDS for w in words):
+                continue  # خطی که فقط آیدی لاتین است (مثل IranintlTV)
         lines.append(new)
     out = "\n".join(lines)
     out = re.sub(r"\n{3,}", "\n\n", out)

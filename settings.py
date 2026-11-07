@@ -18,6 +18,8 @@ BACKFILL_LIMIT = int(_get("BACKFILL_LIMIT", "0"))
 # اختیاری: شناسه‌ی چت خصوصی خودت در بله برای هشدار خطا، و آدرس healthchecks.io برای اطلاع از توقف
 BALE_ADMIN_CHAT = _get("BALE_ADMIN_CHAT", "")
 HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
+# عبارت‌هایی که باید از متن حذف شوند (هر مورد در یک خط): نام کانال‌ها/رسانه‌ها، شعارها، آیدی‌ها
+BLOCKLIST = [x.strip() for x in os.environ.get("BLOCKLIST", "").splitlines() if x.strip()]
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 

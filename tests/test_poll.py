@@ -79,3 +79,53 @@ assert not st2.alert_due("session", now + 3600) and st2.alert_due("session", now
 src = open(os.path.join(os.path.dirname(__file__), "..", "poll.py"), encoding="utf-8").read()
 assert "safe_err" not in src and "set_peer" not in src and "message_id=" not in src
 print("PRIVACY OK")
+
+# ---------- نمونه‌های واقعی کاربر: پایین‌نویس کانال‌ها ----------
+from cleaner import clean_message
+BL = ["پرشین ترند | متفاوت‌ترین کانال نظامی", "IranintlTV", "radiofarda", "bbcpersian", "Indypersian"]
+body = "🔴 فوری: ارتش اعلام کرد رزمایش جدید آغاز شد\nجزئیات بیشتر در ادامه منتشر می‌شود"
+
+# ۱) پایین‌نویس متنی (بدون @ و بدون لینک)
+msg = body + "\n\nپرشین ترند | متفاوت‌ترین کانال نظامی\nIranintlTV\nradiofarda\n\nbbcpersian\nIndypersian"
+out = clean_message(msg, None, [], BL)
+for w in ("پرشین ترند", "متفاوت", "iranintl", "radiofarda", "bbcpersian", "indypersian"):
+    assert w not in out.lower(), (w, out)
+assert out == body, repr(out)
+
+# ۲) حتی بدون بلاک‌لیست: خط‌هایی که فقط آیدی لاتین هستند حذف شوند
+out2 = clean_message(msg, None, [], [])
+for w in ("iranintl", "radiofarda", "bbcpersian", "indypersian"):
+    assert w not in out2.lower(), (w, out2)
+
+# ۳) نام کانال با شعار، در حالتی که فقط عنوان کانال دیگری (scrub) داده شده
+out3 = clean_message(body + "\n🆔 پرشین ترند | متفاوت‌ترین کانال نظامی", None, ["پرشین ترند | متفاوت‌ترین کانال نظامی"], [])
+assert "پرشین" not in out3 and "متفاوت" not in out3 and out3 == body, repr(out3)
+
+# ۴) لینک‌های پنهان (entity): خط کاملاً لینکِ تلگرامی حذف شود، متن اصلی بماند
+class TU:  # MessageEntityTextUrl
+    def __init__(s, o, l, u): s.offset, s.length, s.url = o, l, u
+TU.__name__ = "MessageEntityTextUrl"
+text = "خبر مهم امروز\nکانال ما را ببینید"
+ents = [TU(text.index("کانال"), len("کانال ما را ببینید"), "https://t.me/somechannel")]
+out4 = clean_message(text, ents, [], [])
+assert out4 == "خبر مهم امروز", repr(out4)
+# لینک معمولی داخل جمله دست نخورد
+text5 = "گزارش کامل در سایت منتشر شد و همه‌چیز عادی است"
+e5 = [TU(0, 5, "https://example.com/a")]
+assert clean_message(text5, e5, [], []) == text5
+# offset با ایموجی (UTF-16) درست محاسبه شود
+text6 = "😀🔴 خبر\nمنبع ما"
+e6 = [TU(len("😀🔴 خبر\n".encode("utf-16-le")) // 2, len("منبع ما"), "https://telegram.me/x")]
+assert clean_message(text6, e6, [], []) == "😀🔴 خبر", repr(clean_message(text6, e6, [], []))
+
+# ۵) خط «منبع: آیدی» حذف شود؛ منبع خبری فارسی عادی باقی بماند
+assert clean_message("خبر\nمنبع: bbcpersian", None, [], []) == "خبر"
+assert clean_message("خبر\nمنبع: وزارت دفاع", None, [], []) == "خبر\nمنبع: وزارت دفاع"
+
+# ۶) پیام انگلیسی عادی خراب نشود
+en = "Breaking\nIran announced new talks\nUpdate"
+assert clean_message(en, None, [], []) == en
+# کلمه‌ی عمومی نباید از متن خبر حذف شود (قطعه‌ی تک‌کلمه‌ای عنوان)
+t = "اخبار ایران امروز اعلام شد"
+assert clean_message(t, None, ["اخبار | ایران"], []) == t, clean_message(t, None, ["اخبار | ایران"], [])
+print("USER EXAMPLES OK")

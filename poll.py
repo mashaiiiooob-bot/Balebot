@@ -22,7 +22,7 @@ from telethon.tl.types import Channel, ChatInviteAlready, InputDialogPeer, Input
 
 import settings
 from bale_client import BaleClient
-from cleaner import clean_text
+from cleaner import clean_message
 from news_filter import is_news
 from state import State
 
@@ -43,6 +43,17 @@ def key_for(entity):
     # HMAC با راز خصوصی: از روی state عمومی نمی‌توان فهمید یک کانال جزو منابع هست یا نه
     secret = (os.environ.get("TG_API_HASH", "") + "|balebot-key").encode()
     return hmac.new(secret, str(entity.id).encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def collect_names(entities):
+    """عنوان و یوزرنیم همه‌ی منابع؛ چون یک کانال اغلب پایین‌نویس کانال‌های دیگر را هم در متن می‌گذارد."""
+    names = []
+    for e in entities:
+        names.append(getattr(e, "title", None))
+        names.append(getattr(e, "username", None))
+        for u in getattr(e, "usernames", None) or []:
+            names.append(getattr(u, "username", None))
+    return [n for n in names if n]
 
 
 def build_caption(text):
@@ -139,10 +150,10 @@ async def fetch_new(client, entity, last_id):
     return None
 
 
-async def process_source(client, bale, state, entity, tmpdir):
+async def process_source(client, bale, state, entity, tmpdir, scrub=()):
     key = key_for(entity)
     tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
-    names = [getattr(entity, "title", None), getattr(entity, "username", None)]
+    names = [getattr(entity, "title", None), getattr(entity, "username", None), *scrub]
     last = state.last_id(key)
 
     if last:
@@ -159,7 +170,7 @@ async def process_source(client, bale, state, entity, tmpdir):
     for msg in messages:
         if msg.id <= last:
             continue
-        text = clean_text(msg.message or "", names)
+        text = clean_message(msg.message or "", getattr(msg, "entities", None), names, settings.BLOCKLIST)
         if is_news(text):
             try:
                 await forward(bale, msg, text, tmpdir)
@@ -292,13 +303,14 @@ async def run():
         async def _on_new_message(event):
             wake.set()
 
+        scrub = collect_names(entities)
         last_ping = 0.0
         wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی
         while True:
             wake.clear()
             for entity in await changed_entities(client, state, entities):
                 try:
-                    await process_source(client, bale, state, entity, tmpdir)
+                    await process_source(client, bale, state, entity, tmpdir, scrub)
                 except FloodWaitError as exc:
                     log.warning("Telegram flood wait: %ss", exc.seconds)
                     if exc.seconds > max(0, deadline - time.monotonic()):
