@@ -1,0 +1,342 @@
+{
+ "ai": {
+  "mode": "on",
+  "providers": {
+   "cloudflare": {
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "probe": "ok"
+   },
+   "deepseek": {
+    "listed": [
+     "deepseek-flash",
+     "deepseek-v4-pro"
+    ],
+    "model": "deepseek-flash",
+    "probe": "http_402"
+   },
+   "gemini": {
+    "model": "gemini-3.5-flash-lite",
+    "probe": "ok"
+   },
+   "groq": {
+    "model": "openai/gpt-oss-120b",
+    "probe": "ok"
+   }
+  },
+  "strategy": "vote"
+ },
+ "ai_stats": {
+  "cloudflare_gate_ok": 10,
+  "cloudflare_ok": 1,
+  "gemini_error": 4,
+  "gemini_gate_ok": 37,
+  "gemini_ok": 6,
+  "groq_error": 6,
+  "groq_gate_ok": 22,
+  "groq_ok": 5
+ },
+ "bale_diag": {
+  "getChat": "ok",
+  "getMe": "ok"
+ },
+ "bale_outage": null,
+ "compare": {
+  "agreement": {
+   "cloudflare|gemini": {
+    "agree": 919,
+    "of": 1122,
+    "rate": 0.82
+   },
+   "cloudflare|groq": {
+    "agree": 329,
+    "of": 394,
+    "rate": 0.84
+   },
+   "gemini|groq": {
+    "agree": 232,
+    "of": 255,
+    "rate": 0.91
+   }
+  },
+  "github_e2e_sec": {
+   "n": 332,
+   "p50": 12.5,
+   "p95": 51.1
+  },
+  "providers": {
+   "cloudflare": {
+    "calls": 2829,
+    "err": 0,
+    "err_rate": 0.0,
+    "ok": 2829,
+    "p50_ms": 881,
+    "p95_ms": 3280
+   },
+   "deepseek": {
+    "calls": 0,
+    "err": 0,
+    "err_rate": null,
+    "ok": 0,
+    "p50_ms": null,
+    "p95_ms": null
+   },
+   "gemini": {
+    "calls": 3175,
+    "err": 116,
+    "err_rate": 0.037,
+    "ok": 3059,
+    "p50_ms": 761,
+    "p95_ms": 9167
+   },
+   "groq": {
+    "calls": 5446,
+    "err": 174,
+    "err_rate": 0.032,
+    "ok": 5272,
+    "p50_ms": 446,
+    "p95_ms": 730
+   }
+  },
+  "vs_rules": {
+   "cloudflare": {
+    "err": 0,
+    "false_alarm": 0.21,
+    "fn": 336,
+    "fp": 198,
+    "recall": 0.48,
+    "tn": 726,
+    "tp": 309
+   },
+   "gemini": {
+    "err": 31,
+    "false_alarm": 0.03,
+    "fn": 263,
+    "fp": 27,
+    "recall": 0.41,
+    "tn": 748,
+    "tp": 180
+   },
+   "groq": {
+    "err": 25,
+    "false_alarm": 0.0,
+    "fn": 275,
+    "fp": 0,
+    "recall": 0.33,
+    "tn": 19,
+    "tp": 133
+   }
+  }
+ },
+ "count": 36,
+ "dialogs": "ok",
+ "panel": {
+  "admin_stats": true,
+  "admin_summary": {
+   "dc": 4,
+   "derived_keys": [
+    "growth",
+    "joined_left",
+    "languages",
+    "new_followers_by_source",
+    "views_by_source"
+   ],
+   "followers": 412.0,
+   "graphs_err": [],
+   "graphs_ok": [
+    "growth_graph",
+    "followers_graph",
+    "views_by_source_graph",
+    "new_followers_by_source_graph",
+    "languages_graph"
+   ]
+  },
+  "admins": 1,
+  "channel_check": {
+   "fetched_utc": "2026-11-21 13:51",
+   "full_error": null,
+   "posts": 500,
+   "subs": 411
+  },
+  "enabled": true,
+  "errors": 0,
+  "last_error": null,
+  "polls": 307,
+  "unauthorized": 0,
+  "updates": 3
+ },
+ "removed_by_rule": 0,
+ "sem": {
+  "calibration": {
+   "0.80": [
+    0,
+    1
+   ],
+   "0.84": [
+    2,
+    0
+   ],
+   "0.86": [
+    0,
+    1
+   ],
+   "0.90": [
+    1,
+    1
+   ]
+  },
+  "calibration_pairs": 6,
+  "dims": 1024,
+  "memory": 128,
+  "mode": "",
+  "model": "@cf/baai/bge-m3",
+  "probe": "ok",
+  "provider": "cloudflare",
+  "t_high": 0.93,
+  "t_low": 0.8
+ },
+ "since_utc": "2026-11-09 03:31",
+ "sources": {
+  "1": "ok",
+  "10": "ok",
+  "11": "ok",
+  "12": "ok",
+  "13": "ok",
+  "14": "ok",
+  "15": "ok",
+  "16": "ok",
+  "17": "ok",
+  "18": "ok",
+  "19": "ok",
+  "2": "ok",
+  "20": "ok",
+  "21": "ok",
+  "22": "ok",
+  "23": "ok",
+  "24": "ok",
+  "25": "ok",
+  "26": "ok",
+  "27": "ok",
+  "28": "ok",
+  "29": "ok",
+  "3": "ok",
+  "30": "ok",
+  "31": "ok",
+  "32": "ok",
+  "33": "ok",
+  "34": "ok",
+  "35": "ok",
+  "36": "ok",
+  "4": "ok",
+  "5": "ok",
+  "6": "ok",
+  "7": "ok",
+  "8": "ok",
+  "9": "ok"
+ },
+ "stats": {
+  "ad": 19,
+  "ai_ad": 5,
+  "ai_banned": 1,
+  "ai_calls": 0,
+  "ai_caught": 0,
+  "ai_errors": 0,
+  "ai_rescued": 0,
+  "ai_skipped": 0,
+  "bale_outage": 0,
+  "dropword": 23,
+  "dup_v1_only": 1,
+  "dup_v2_only": 0,
+  "duplicate": 12,
+  "emptied_by_cleaner": 0,
+  "failed": 0,
+  "gate_calls": 69,
+  "gate_errors": 0,
+  "imp_1": 3,
+  "imp_2": 9,
+  "imp_3": 24,
+  "imp_4": 26,
+  "imp_5": 7,
+  "low_importance": 31,
+  "no_text": 33,
+  "not_news": 38,
+  "profanity": 4,
+  "rate_cap": 0,
+  "seen": 198,
+  "sem_calls": 81,
+  "sem_caught": 3,
+  "sem_dup": 12,
+  "sem_errors": 0,
+  "sem_llm": 6,
+  "sem_new": 69,
+  "sem_rescued": 0,
+  "sem_vetoed": 0,
+  "sent": 32,
+  "sh_dup_ai_dup": 0,
+  "sh_dup_ai_new": 0,
+  "sh_gate_ad": 5,
+  "sh_gate_banned": 1,
+  "sh_gate_low": 31,
+  "sh_new_ai_dup": 0,
+  "sh_new_ai_new": 0,
+  "too_old": 0
+ },
+ "stats_total": {
+  "ad": 1744,
+  "ai_ad": 179,
+  "ai_banned": 145,
+  "ai_calls": 840,
+  "ai_caught": 228,
+  "ai_errors": 86,
+  "ai_rescued": 92,
+  "ai_skipped": 148,
+  "bale_outage": 2089,
+  "dropword": 2235,
+  "dup_v1_only": 11,
+  "dup_v2_only": 0,
+  "duplicate": 1118,
+  "emptied_by_cleaner": 17,
+  "failed": 4619,
+  "gate_calls": 6401,
+  "gate_errors": 9,
+  "imp_1": 46,
+  "imp_2": 175,
+  "imp_3": 337,
+  "imp_4": 567,
+  "imp_5": 175,
+  "low_importance": 402,
+  "no_text": 1209,
+  "not_news": 1818,
+  "profanity": 164,
+  "rate_cap": 129,
+  "seen": 26163,
+  "sem_calls": 85,
+  "sem_caught": 3,
+  "sem_dup": 12,
+  "sem_errors": 0,
+  "sem_llm": 6,
+  "sem_new": 72,
+  "sem_rescued": 0,
+  "sem_vetoed": 0,
+  "sent": 2516,
+  "sh_dup_ai_dup": 140,
+  "sh_dup_ai_new": 92,
+  "sh_gate_ad": 179,
+  "sh_gate_banned": 145,
+  "sh_gate_low": 402,
+  "sh_new_ai_dup": 228,
+  "sh_new_ai_new": 294,
+  "too_old": 9868
+ },
+ "tg": {
+  "dropped_age": 0,
+  "dropped_overflow": 0,
+  "enabled": true,
+  "failed_attempts": 0,
+  "last_error": null,
+  "last_ok_utc": "2026-11-21 13:50",
+  "queued": 0,
+  "sent": 32,
+  "skipped_duplicate": 0
+ },
+ "uptime_min": 128
+}
