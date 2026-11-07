@@ -82,13 +82,24 @@ def get_remove_terms():
     return [x.strip().lstrip("@").lower() for x in os.environ.get("SOURCES_REMOVE", "").replace(",", "\n").splitlines() if x.strip()]
 
 
+def get_add_terms():
+    """منبع‌هایی که صریحاً با SOURCES_ADD اضافه شده‌اند (نرمال‌شده)؛ SOURCES_REMOVE روی آن‌ها اثر ندارد."""
+    return {confuse(_norm_source(x)) for x in _parse(os.environ.get("SOURCES_ADD", ""))}
+
+
 def get_sources():
-    """SOURCES + SOURCES_EXTRA، منهای SOURCES_REMOVE (بدون تکرار). لینک، یوزرنیم یا شناسه عددی."""
+    """SOURCES + SOURCES_EXTRA، منهای SOURCES_REMOVE، به‌علاوه‌ی SOURCES_ADD (همیشه اضافه می‌شود)؛ بدون تکرار."""
     removed = {confuse(_norm_source(x)) for x in get_remove_terms()}
     seen, out = set(), []
     for item in _parse(os.environ.get("SOURCES", "")) + _parse(os.environ.get("SOURCES_EXTRA", "")):
         key = _norm_source(item)
         if confuse(key) in removed or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    for item in _parse(os.environ.get("SOURCES_ADD", "")):
+        key = _norm_source(item)
+        if key in seen:
             continue
         seen.add(key)
         out.append(item)

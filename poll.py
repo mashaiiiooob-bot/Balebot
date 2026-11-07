@@ -274,11 +274,15 @@ async def resolve_sources(client, state):
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
     # حذف منبع بر اساس یوزرنیم/عنوان (SOURCES_REMOVE)، حتی اگر در SOURCES به شکل دیگری آمده باشد
     terms = [settings.confuse(t) for t in settings.get_remove_terms()]
+    add_terms = settings.get_add_terms()
     keep = []
     for e in entities:
         unames = [getattr(e, "username", None)] + [getattr(u, "username", None) for u in (getattr(e, "usernames", None) or [])]
         unames = [settings.confuse(u) for u in unames if u]
         title = settings.confuse(getattr(e, "title", None) or "")
+        if any(u in add_terms for u in unames):
+            keep.append(e)   # منبعی که صریحاً با SOURCES_ADD آمده، حذف نمی‌شود
+            continue
         if any(u in terms for u in unames) or any(len(t) >= 6 and t in title for t in terms) \
                 or any(len(t) >= 6 and t in u for t in terms for u in unames):
             continue
