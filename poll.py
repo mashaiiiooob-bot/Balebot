@@ -29,6 +29,11 @@ from state import State
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
 
+# شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
+STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "not_news": 0, "sent": 0, "failed": 0}
+BASE_STATUS = {}
+STARTED = time.time()
+
 
 INVITE_RE = re.compile(r"(?:t\.me|telegram\.me)/(?:joinchat/|\+)([\w-]+)", re.I)
 
@@ -170,14 +175,24 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
     for msg in messages:
         if msg.id <= last:
             continue
-        text = clean_message(msg.message or "", getattr(msg, "entities", None), names, settings.BLOCKLIST)
+        raw = msg.message or ""
+        text = clean_message(raw, getattr(msg, "entities", None), names, settings.BLOCKLIST)
+        STATS["seen"] += 1
+        if not raw.strip():
+            STATS["no_text"] += 1
+        elif not text.strip():
+            STATS["emptied_by_cleaner"] += 1
+        elif not is_news(text):
+            STATS["not_news"] += 1
         if is_news(text):
             try:
                 await forward(bale, msg, text, tmpdir)
+                STATS["sent"] += 1
                 log.info("Forwarded source=%s", tag)
             except FloodWaitError:
                 raise
             except Exception as exc:
+                STATS["failed"] += 1
                 state.add_fail(key, msg.id)
                 fails = state.fail_count(key, msg.id)
                 log.error("Forward failed source=%s (%d/%d): %s", tag, fails,
@@ -238,6 +253,7 @@ async def resolve_sources(client, state):
             status["sources"][str(index)] = type(exc).__name__
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
     state.save()
+    BASE_STATUS.update(status)
     write_status(status)
     return entities, failed
 
@@ -320,6 +336,7 @@ async def run():
                 except Exception as exc:
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
+            write_status({**BASE_STATUS, "stats": dict(STATS), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)
