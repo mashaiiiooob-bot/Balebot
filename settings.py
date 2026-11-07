@@ -22,6 +22,8 @@ HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
 BLOCKLIST = [x.strip() for x in (os.environ.get("BLOCKLIST", "") + "\n" + os.environ.get("BLOCKLIST_EXTRA", "")).splitlines() if x.strip()]
 # پیامی که این واژه‌ها را (به‌صورت واژه‌ی کامل) داشته باشد ارسال نمی‌شود؛ هر مورد در یک خط
 DROP_WORDS = [x.strip() for x in (os.environ.get("DROP_WORDS", "") + "\n" + os.environ.get("DROP_WORDS_EXTRA", "")).splitlines() if x.strip()]
+# حداقل سطح فحش که حذف شود: 1 = همه (ملایم تا رکیک)، 2 = متوسط و رکیک، 3 = فقط رکیک
+PROFANITY_MIN_LEVEL = int(_get("PROFANITY_MIN_LEVEL", "1"))
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 

@@ -24,6 +24,7 @@ import settings
 from bale_client import BaleClient
 from cleaner import clean_message
 from news_filter import is_news, is_ad, has_dropword
+from profanity import has_profanity
 from dedupe import signature, is_duplicate
 from state import State
 
@@ -31,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 log = logging.getLogger("balebot")
 
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
-STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0}
+STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0}
 BASE_STATUS = {}
 STARTED = time.time()
 
@@ -166,6 +167,8 @@ def classify(raw, text, state):
         return "ad", None
     if has_dropword(raw, settings.DROP_WORDS) or has_dropword(text, settings.DROP_WORDS):  # متن خام هم چک می‌شود (اسم‌هایی که پاک‌سازی حذف می‌کند)
         return "dropword", None
+    if has_profanity(raw, settings.PROFANITY_MIN_LEVEL):
+        return "profanity", None
     if not is_news(text):
         return "not_news", None
     sig = signature(text)

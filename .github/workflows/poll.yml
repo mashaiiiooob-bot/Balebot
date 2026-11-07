@@ -72,6 +72,7 @@ jobs:
           LOOP_SECONDS: ${{ vars.LOOP_SECONDS }}
           POLL_INTERVAL: ${{ vars.POLL_INTERVAL }}
           BACKFILL_LIMIT: ${{ vars.BACKFILL_LIMIT }}
+          PROFANITY_MIN_LEVEL: ${{ vars.PROFANITY_MIN_LEVEL }}
 
       - name: Save state
         if: always()
