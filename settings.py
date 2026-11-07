@@ -15,6 +15,9 @@ LOOP_SECONDS = int(_get("LOOP_SECONDS", "19800"))
 POLL_INTERVAL = int(_get("POLL_INTERVAL", "20"))
 # تعداد پیام اخیری که فقط در اولین اجرا (بدون checkpoint) ارسال می‌شود؛ 0 یعنی از اکنون به بعد
 BACKFILL_LIMIT = int(_get("BACKFILL_LIMIT", "0"))
+# اختیاری: شناسه‌ی چت خصوصی خودت در بله برای هشدار خطا، و آدرس healthchecks.io برای اطلاع از توقف
+BALE_ADMIN_CHAT = _get("BALE_ADMIN_CHAT", "")
+HEALTHCHECK_URL = _get("HEALTHCHECK_URL", "")
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 

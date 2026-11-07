@@ -2,20 +2,24 @@ import json
 import os
 from pathlib import Path
 
+STATE_VERSION = 2  # نسخه‌ی ۲: کلیدها HMAC هستند و peers (شناسه/هش کانال) ذخیره نمی‌شود
+
 
 class State:
-    """وضعیت کوچک JSON: فقط آخرین شناسه‌ی پردازش‌شده‌ی هر کانال (کلیدها هش هستند)."""
+    """وضعیت کوچک JSON: فقط آخرین شناسه‌ی پردازش‌شده‌ی هر کانال (کلیدها HMAC با راز خصوصی هستند)."""
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"checkpoints": {}, "fails": {}, "peers": {}}
+        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}}
         self.dirty = False
         if self.path.exists():
             try:
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
-                self.data["checkpoints"].update(loaded.get("checkpoints", {}))
-                self.data["fails"].update(loaded.get("fails", {}))
-                self.data["peers"].update(loaded.get("peers", {}))
+                if loaded.get("version") == STATE_VERSION:
+                    for name in ("checkpoints", "fails", "alerts"):
+                        self.data[name].update(loaded.get(name, {}))
+                else:
+                    self.dirty = True  # state قدیمی (با کلید هش‌ساده و peers) دور ریخته و بازنویسی می‌شود
             except (ValueError, OSError):
                 pass
 
@@ -39,14 +43,12 @@ class State:
         if self.data["fails"].pop(f"{key}:{message_id}", None) is not None:
             self.dirty = True
 
-    def get_peer(self, src_key):
-        return self.data["peers"].get(src_key)
+    def alert_due(self, code, now, every=86400):
+        return now - float(self.data["alerts"].get(code, 0)) >= every
 
-    def set_peer(self, src_key, channel_id, access_hash):
-        value = [int(channel_id), int(access_hash)]
-        if self.data["peers"].get(src_key) != value:
-            self.data["peers"][src_key] = value
-            self.dirty = True
+    def mark_alert(self, code, now):
+        self.data["alerts"][code] = now
+        self.dirty = True
 
     def save(self):
         if not self.dirty:

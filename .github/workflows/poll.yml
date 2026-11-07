@@ -24,6 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
+      # اگر گیت‌هاب زمان‌بندی را به‌خاطر بی‌فعالی غیرفعال کرده باشد، دوباره فعالش می‌کند
+      - name: Keep schedule enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable poll.yml -R "${{ github.repository }}" || true
+
       - uses: actions/checkout@v7
 
       - uses: actions/checkout@v7
@@ -52,6 +58,8 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION: ${{ secrets.TG_SESSION }}
           BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
+          BALE_ADMIN_CHAT: ${{ secrets.BALE_ADMIN_CHAT }}
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
           SOURCES: ${{ secrets.SOURCES }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
           SIGNATURE: ${{ vars.SIGNATURE }}

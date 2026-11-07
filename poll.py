@@ -1,15 +1,18 @@
 """بررسی دوره‌ای کانال‌های تلگرام و ارسال خبرها به بله (برای GitHub Actions)."""
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 
+import requests
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
@@ -37,7 +40,9 @@ def source_label(entity):
 
 
 def key_for(entity):
-    return hashlib.sha256(str(entity.id).encode()).hexdigest()[:16]
+    # HMAC با راز خصوصی: از روی state عمومی نمی‌توان فهمید یک کانال جزو منابع هست یا نه
+    secret = (os.environ.get("TG_API_HASH", "") + "|balebot-key").encode()
+    return hmac.new(secret, str(entity.id).encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def build_caption(text):
@@ -59,6 +64,31 @@ def media_kind(message):
     return "document"
 
 
+def sanitize_media(path, kind):
+    """نام اصلی فایل را خنثی می‌کند و (در صورت وجود ffmpeg) متادیتای ویدیو/صدا را پاک می‌کند."""
+    ext = os.path.splitext(path)[1].lower()
+    if not re.fullmatch(r"\.[a-z0-9]{1,5}", ext):
+        ext = ""
+    neutral = os.path.join(os.path.dirname(path), "media" + ext)
+    os.replace(path, neutral)
+    if kind in ("video", "audio") and shutil.which("ffmpeg"):
+        out = os.path.join(os.path.dirname(path), "clean" + ext)
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", neutral,
+                 "-map", "0", "-map_metadata", "-1", "-c", "copy", out],
+                timeout=120, capture_output=True,
+            )
+            if r.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
+                os.replace(out, neutral)
+        except Exception:
+            pass
+        finally:
+            if os.path.exists(out):
+                os.remove(out)
+    return neutral
+
+
 async def forward(bale, message, text, tmpdir):
     caption = build_caption(text)
     media_path = None
@@ -66,6 +96,8 @@ async def forward(bale, message, text, tmpdir):
         size = getattr(message.file, "size", 0) or 0
         if message.media and size <= settings.MAX_FILE_MB * 1024 * 1024:
             media_path = await message.download_media(file=tmpdir)
+            if media_path:
+                media_path = await asyncio.to_thread(sanitize_media, media_path, media_kind(message))
         if media_path:
             await asyncio.to_thread(
                 bale.send_media, settings.BALE_DESTINATION, media_path, caption, media_kind(message)
@@ -78,6 +110,27 @@ async def forward(bale, message, text, tmpdir):
                 os.remove(media_path)
             except OSError:
                 pass
+
+
+async def alert(bale, state, code, text):
+    """هشدار خطا به چت خصوصی مدیر در بله (حداکثر یک بار در ۲۴ ساعت برای هر نوع خطا)."""
+    chat = settings.BALE_ADMIN_CHAT
+    now = time.time()
+    if not chat or not state.alert_due(code, now):
+        return
+    try:
+        await asyncio.to_thread(bale.send_text, chat, "⚠️ Balebot: " + text)
+        state.mark_alert(code, now)
+        state.save()
+    except Exception:
+        log.warning("Admin alert could not be sent")
+
+
+def ping_healthcheck():
+    try:
+        requests.get(settings.HEALTHCHECK_URL, timeout=10)
+    except Exception:
+        pass  # آدرس هرگز چاپ نمی‌شود
 
 
 async def fetch_new(client, entity, last_id):
@@ -110,17 +163,19 @@ async def process_source(client, bale, state, entity, tmpdir):
         if is_news(text):
             try:
                 await forward(bale, msg, text, tmpdir)
-                log.info("Forwarded source=%s message_id=%s", tag, msg.id)
+                log.info("Forwarded source=%s", tag)
             except FloodWaitError:
                 raise
             except Exception as exc:
                 state.add_fail(key, msg.id)
                 fails = state.fail_count(key, msg.id)
-                log.error("Forward failed source=%s id=%s (%d/%d): %s", tag, msg.id, fails,
+                log.error("Forward failed source=%s (%d/%d): %s", tag, fails,
                           settings.MAX_FAILS, type(exc).__name__)
                 state.save()
                 if fails < settings.MAX_FAILS:
                     return  # checkpoint جلو نمی‌رود؛ دور بعد دوباره تلاش می‌شود
+                await alert(bale, state, "skipped",
+                            f"a message was skipped after {settings.MAX_FAILS} failed sends (source {tag}).")
         state.clear_fail(key, msg.id)
         state.set_last_id(key, msg.id)
         state.save()
@@ -137,53 +192,43 @@ def write_status(info):
         pass
 
 
-def safe_err(exc, source):
-    msg = str(exc).replace(source, "<src>")[:160]
-    return f"{type(exc).__name__}: {msg}"
-
-
-def src_key(source):
-    return hashlib.sha256(source.encode()).hexdigest()[:16]
-
-
 async def resolve_sources(client, state):
-    status = {"dialogs": "ok", "count": len(settings.get_sources()), "sources": {}}
+    sources = settings.get_sources()
+    status = {"dialogs": "ok", "count": len(sources), "sources": {}}
+    failed = []
     try:
-        await client.get_dialogs()  # کش کردن موجودیت‌ها
+        await client.get_dialogs()  # کش کردن موجودیت‌ها (کانال‌های عضو‌شده بدون درخواست resolve پیدا می‌شوند)
     except Exception as exc:
-        status["dialogs"] = safe_err(exc, "")
+        status["dialogs"] = type(exc).__name__
         log.warning("get_dialogs failed: %s", type(exc).__name__)
     entities = []
-    for index, source in enumerate(settings.get_sources(), 1):
+    for index, source in enumerate(sources, 1):
         try:
             invite = INVITE_RE.search(source)
-            cached = None if invite else state.get_peer(src_key(source))
             if invite:
                 res = await client(CheckChatInviteRequest(invite.group(1)))
                 if not isinstance(res, ChatInviteAlready):
-                    raise ValueError("account is not a member of this private chat")
+                    raise ValueError("not a member")
                 entity = res.chat
-            elif cached:
-                entity = await client.get_entity(InputPeerChannel(cached[0], cached[1]))
             else:
                 target = int(source) if re.fullmatch(r"-?\d+", source) else source
                 entity = await client.get_entity(target)
-                if isinstance(entity, Channel) and entity.access_hash:
-                    state.set_peer(src_key(source), entity.id, entity.access_hash)
-                await asyncio.sleep(0.5)  # فاصله بین resolveهای جدید (جلوگیری از FloodWait)
+                await asyncio.sleep(0.5)  # فاصله بین resolveها (جلوگیری از FloodWait)
             entities.append(entity)
             status["sources"][str(index)] = "ok"
             log.info("Source #%d ready", index)
         except FloodWaitError as exc:
+            failed.append(index)
             status["sources"][str(index)] = f"FloodWait {exc.seconds}s"
             log.warning("Source #%d flood wait %ss; retry next run", index, exc.seconds)
         except Exception as exc:
-            status["sources"][str(index)] = safe_err(exc, source)
-            # عمداً خود منبع (ممکن است لینک خصوصی باشد) چاپ نمی‌شود؛ لاگ عمومی است.
+            failed.append(index)
+            # فقط نوع خطا ثبت می‌شود، نه متن آن (متن خطا ممکن است یوزرنیم منبع را داشته باشد)
+            status["sources"][str(index)] = type(exc).__name__
             log.error("Could not resolve source #%d: %s", index, type(exc).__name__)
     state.save()
     write_status(status)
-    return entities
+    return entities, failed
 
 
 async def changed_entities(client, state, entities):
@@ -229,11 +274,16 @@ async def run():
     try:
         if not await client.is_user_authorized():
             log.error("Telegram session is not authorized. Regenerate TG_SESSION.")
+            await alert(bale, state, "session", "the Telegram session is invalid. Regenerate TG_SESSION (python generate_session.py) and update the secret.")
             return 3
-        entities = await resolve_sources(client, state)
+        entities, failed = await resolve_sources(client, state)
         if not entities:
             log.error("No source could be resolved.")
+            await alert(bale, state, "nosources", "no source could be resolved. Check SOURCES and the Telegram membership.")
             return 4
+        if failed:
+            await alert(bale, state, "badsources",
+                        f"{len(failed)} source(s) could not be resolved (positions in SOURCES: {', '.join(map(str, failed))}).")
 
         # رویداد تلگرام: به‌محض رسیدن پیام جدید حلقه بیدار می‌شود (تأخیر حدود ۱ ثانیه)
         wake = asyncio.Event()
@@ -242,6 +292,7 @@ async def run():
         async def _on_new_message(event):
             wake.set()
 
+        last_ping = 0.0
         wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی
         while True:
             wake.clear()
@@ -257,6 +308,9 @@ async def run():
                 except Exception as exc:
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
+            if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
+                last_ping = time.monotonic()
+                await asyncio.to_thread(ping_healthcheck)
             if time.monotonic() + settings.POLL_INTERVAL >= deadline:
                 break
             # تا رویداد جدید بیاید منتظر می‌ماند؛ POLL_INTERVAL فقط پشتیبان است
