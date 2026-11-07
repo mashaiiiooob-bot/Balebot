@@ -135,7 +135,7 @@ def safe_err(exc, source):
 
 
 async def resolve_sources(client):
-    status = {"dialogs": "ok", "sources": {}}
+    status = {"dialogs": "ok", "count": len(settings.get_sources()), "sources": {}}
     try:
         await client.get_dialogs()  # کش کردن موجودیت‌ها؛ از resolve مکرر یوزرنیم جلوگیری می‌کند
     except Exception as exc:

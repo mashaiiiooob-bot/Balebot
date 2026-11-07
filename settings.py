@@ -38,5 +38,5 @@ AD_KEYWORDS = [
 def get_sources():
     """SOURCES: هر منبع در یک خط (یا جداشده با ویرگول). لینک، یوزرنیم یا شناسه عددی."""
     raw = os.environ.get("SOURCES", "")
-    items = [x.strip() for x in re.split(r"[\n,]+", raw) if x.strip()]
+    items = [x.strip() for x in re.split(r"\\n|[\s,;]+", raw) if x.strip()]
     return items
