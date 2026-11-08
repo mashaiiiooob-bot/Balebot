@@ -29,6 +29,8 @@ _DEFAULT_DROP_WORDS = [
 DROP_WORDS = list(dict.fromkeys(_DEFAULT_DROP_WORDS + [x.strip() for x in (os.environ.get("DROP_WORDS", "") + "\n" + os.environ.get("DROP_WORDS_EXTRA", "")).splitlines() if x.strip()]))
 # حداقل سطح فحش که حذف شود: 1 = همه (ملایم تا رکیک)، 2 = متوسط و رکیک، 3 = فقط رکیک
 PROFANITY_MIN_LEVEL = int(_get("PROFANITY_MIN_LEVEL", "1"))
+BENCH_PER_DAY = int(_get("AI_BENCH_PER_DAY", "60"))   # تعداد پیام‌های نمونه برای مقایسه‌ی سرویس‌ها در روز
+BENCH_RATE = float(_get("AI_BENCH_RATE", "0.3"))
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 

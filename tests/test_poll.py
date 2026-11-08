@@ -311,6 +311,8 @@ class FP(ai_mod.Provider):
     def __init__(self, name, results, limit=100):
         self.name = name; self.key = "k"; self.limit = limit; self.model = "m"; self.probe = "ok"; self.ok = True
         self._last = 0.0; self._blocked_until = 0.0; self.min_interval = 0; self.results = list(results); self.calls = 0
+        self.okc = self.errc = 0; self.lat = __import__("collections").deque(maxlen=300)
+    def _run(self, text): return self._generate(text)
     def _generate(self, text):
         self.calls += 1; r = self.results.pop(0)
         return (200, r) if isinstance(r, dict) else (r, None)
@@ -385,3 +387,24 @@ os.environ["CLOUDFLARE_API_TOKEN"] = "t"; os.environ["GROQ_API_KEY"] = "g"; os.e
 assert [p.name for p in ai_mod.AI().providers] == ["gemini", "groq", "cloudflare"]
 for k in ("CLOUDFLARE_API_TOKEN", "GROQ_API_KEY", "GEMINI_API_KEY"): os.environ.pop(k)
 print("CLOUDFLARE ORDER OK")
+
+# ================= مقایسه‌ی عوامل =================
+poll.BENCH.clear(); poll.BENCH_PAIR.clear()
+poll.bench_update({"gemini": (True, False), "groq": (False, False), "cf": None}, positive=True)    # حتماً ممنوع
+poll.bench_update({"gemini": (False, False), "groq": (True, False)}, positive=False)               # سالم
+poll.bench_update({"gemini": (False, True), "groq": (False, True)}, positive=True)
+rep = poll.compare_report()
+assert rep["vs_rules"]["gemini"]["tp"] == 2 and rep["vs_rules"]["gemini"]["tn"] == 1 and rep["vs_rules"]["gemini"]["recall"] == 1.0
+assert rep["vs_rules"]["groq"]["fn"] == 1 and rep["vs_rules"]["groq"]["fp"] == 1 and rep["vs_rules"]["groq"]["tp"] == 1
+assert rep["vs_rules"]["cf"]["err"] == 1 and rep["agreement"]["gemini|groq"] == {"agree": 1, "of": 3, "rate": 0.33}
+# عملکرد سرویس: تأخیر و خطا
+class PP(ai_mod.Provider):
+    name = "pp"
+    def __init__(self): super().__init__("k"); self.ok = True; self.res = [(200, DUP), (500, None), (200, DUP)]
+    def _generate(self, text): return self.res.pop(0)
+pf = PP()
+for _ in range(3): pf._run("x")
+aiq = mk("failover", pf); perf = aiq.perf()["pp"]
+assert perf["calls"] == 3 and perf["err"] == 1 and perf["err_rate"] == 0.333 and perf["p50_ms"] is not None
+poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.AIC = None
+print("COMPARE OK")

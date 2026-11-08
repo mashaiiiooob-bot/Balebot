@@ -8,6 +8,8 @@ import os
 import re
 import time
 
+from collections import deque
+
 import requests
 
 GL = "https://generativelanguage.googleapis.com/v1beta"
@@ -70,6 +72,20 @@ class Provider:
         self.ok = False
         self._last = 0.0
         self._blocked_until = 0.0
+        self.calls = self.okc = self.errc = 0
+        self.lat = deque(maxlen=300)
+
+    def _run(self, text):
+        """_generate + اندازه‌گیری تأخیر و نرخ خطا (برای مقایسه‌ی سرویس‌ها)."""
+        t0 = time.perf_counter()
+        status, out = self._generate(text)
+        self.calls += 1
+        if status == 200 and out is not None:
+            self.okc += 1
+            self.lat.append((time.perf_counter() - t0) * 1000)
+        else:
+            self.errc += 1
+        return status, out
 
     def _generate(self, text):  # -> (status, parsed_json | None)
         raise NotImplementedError
@@ -94,7 +110,7 @@ class Provider:
         state.dirty = True
         self._last = time.monotonic()
         body = PROMPT + "".join(f"OLD {i}: {_cut(t)}\n" for i, t in enumerate(old_texts, 1)) + f"NEW: {_cut(new_text)}"
-        status, out = self._generate(body)
+        status, out = self._run(body)
         if status == 429:
             self._blocked_until = time.monotonic() + 600
         return _verdict(out) if status == 200 else None
@@ -105,7 +121,7 @@ class Provider:
         state.data["ai"][self.name] += 1
         state.dirty = True
         self._last = time.monotonic()
-        status, out = self._generate(GATE_PROMPT.format(terms=" | ".join(terms)) + _cut(text, 900))
+        status, out = self._run(GATE_PROMPT.format(terms=" | ".join(terms)) + _cut(text, 900))
         if status == 429:
             self._blocked_until = time.monotonic() + 600
         if status != 200 or not isinstance(out, dict):
@@ -284,6 +300,24 @@ class AI:
     def allow(self, state):
         """آیا حداقل یک سرویس آماده است؟ (در thread اصلی؛ کلیدهای بودجه‌ی state هم اینجا ساخته می‌شوند.)"""
         return self.mode != "off" and any(p.ready(state) for p in self.providers)
+
+    def perf(self):
+        """آمار عملکرد هر سرویس: تعداد، نرخ موفقیت، تأخیر میانه و p95 (میلی‌ثانیه)."""
+        out = {}
+        for p in self.providers + self.failed:
+            lat = sorted(p.lat)
+            q = lambda f: round(lat[min(len(lat) - 1, int(len(lat) * f))]) if lat else None
+            out[p.name] = {"calls": p.calls, "ok": p.okc, "err": p.errc,
+                           "err_rate": round(p.errc / p.calls, 3) if p.calls else None, "p50_ms": q(0.5), "p95_ms": q(0.95)}
+        return out
+
+    def bench_gate(self, text, terms, state):
+        """همان پرسش دروازه را از همه‌ی سرویس‌های آماده می‌پرسد (برای مقایسه). خروجی: {نام: (banned, ad) | None}"""
+        res = {}
+        for p in self.providers:
+            if p.ready(state):
+                res[p.name] = p.gate(text, terms[:120], state)
+        return res
 
     def judge_gate(self, text, terms, state):
         """اولین سرویس سالم جواب می‌دهد؛ خروجی (banned, ad) یا None."""

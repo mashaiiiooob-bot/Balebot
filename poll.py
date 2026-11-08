@@ -1,5 +1,8 @@
 """بررسی دوره‌ای کانال‌های تلگرام و ارسال خبرها به بله (برای GitHub Actions)."""
 import asyncio
+import random
+from collections import deque
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -38,6 +41,12 @@ STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 
          "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
+# ---- مقایسه‌ی عوامل: قوانین (مرجع) در برابر هر سرویس هوش مصنوعی؛ فقط عدد، بدون متن ----
+BENCH = {}          # نام -> tp/fp/fn/tn/skipped/err
+BENCH_PAIR = {}     # "a|b" -> [موافق, کل]
+BENCH_DAY = {"day": "", "n": 0}
+LAT_E2E = deque(maxlen=500)  # تأخیر واقعی انتشار در تلگرام تا رسیدن به بله (ms)
+_BG = set()
 RECENT = []  # فقط در حافظه (متن پاک‌شده‌ی پیام‌های ارسالی اخیر)؛ هرگز ذخیره یا منتشر نمی‌شود
 BASE_STATUS = {}
 STARTED = time.time()
@@ -225,6 +234,60 @@ async def apply_gate(text, state):
     return None
 
 
+def bench_update(results, positive):
+    """positive=True: قوانین پیام را حتماً ممنوع/تبلیغ می‌دانند؛ False: پیام سالمِ ارسال‌شده."""
+    pred = {}
+    for name, r in results.items():
+        b = BENCH.setdefault(name, {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "err": 0})
+        if r is None:
+            b["err"] += 1
+            continue
+        flagged = bool(r[0] or r[1])
+        pred[name] = flagged
+        b[("tp" if flagged else "fn") if positive else ("fp" if flagged else "tn")] += 1
+    names = sorted(pred)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            rec = BENCH_PAIR.setdefault(f"{names[i]}|{names[j]}", [0, 0])
+            rec[1] += 1
+            rec[0] += pred[names[i]] == pred[names[j]]
+
+
+def bench_wanted():
+    if AIC is None or AIC.mode == "off" or settings.BENCH_PER_DAY <= 0:
+        return False
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    if BENCH_DAY["day"] != day:
+        BENCH_DAY.update({"day": day, "n": 0})
+    if BENCH_DAY["n"] >= settings.BENCH_PER_DAY or random.random() > settings.BENCH_RATE:
+        return False
+    BENCH_DAY["n"] += 1
+    return True
+
+
+async def bench_task(text, positive, state):
+    try:
+        res = await asyncio.to_thread(AIC.bench_gate, text, settings.DROP_WORDS, state)
+        if res:
+            bench_update(res, positive)
+    except Exception:
+        pass
+
+
+def compare_report():
+    lat = sorted(LAT_E2E)
+    q = lambda f: round(lat[min(len(lat) - 1, int(len(lat) * f))] / 1000, 1) if lat else None
+    out = {"github_e2e_sec": {"n": len(lat), "p50": q(0.5), "p95": q(0.95)},
+           "providers": AIC.perf() if AIC else {}, "vs_rules": {}, "agreement": {}}
+    for name, b in BENCH.items():
+        pos, neg = b["tp"] + b["fn"], b["fp"] + b["tn"]
+        out["vs_rules"][name] = {**b, "recall": round(b["tp"] / pos, 2) if pos else None,
+                                 "false_alarm": round(b["fp"] / neg, 2) if neg else None}
+    for k, (agree, tot) in BENCH_PAIR.items():
+        out["agreement"][k] = {"agree": agree, "of": tot, "rate": round(agree / tot, 2) if tot else None}
+    return out
+
+
 def classify(raw, text, state):
     """None = ارسال شود (همراه امضای محتوا)؛ وگرنه دلیلِ ارسال‌نشدن."""
     if not raw.strip():
@@ -274,6 +337,9 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
             reason = await apply_ai(reason, sig, text, state)
         if reason is None:
             reason = await apply_gate(text, state)
+        bench_label = True if reason in ("dropword", "ad") else (False if reason is None else None)
+        if bench_label is not None and bench_wanted():
+            t = asyncio.create_task(bench_task(text, bench_label, state)); _BG.add(t); t.add_done_callback(_BG.discard)
         if reason:
             STATS[reason] += 1
         else:
@@ -283,6 +349,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]
                 STATS["sent"] += 1
+                if getattr(msg, "date", None):
+                    LAT_E2E.append((datetime.now(timezone.utc) - msg.date).total_seconds() * 1000)
                 log.info("Forwarded source=%s", tag)
             except FloodWaitError:
                 raise
@@ -454,7 +522,7 @@ async def run():
                 except Exception as exc:
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
-            write_status({**BASE_STATUS, "stats": dict(STATS), "ai_stats": dict(AIC.stats) if AIC else {}, "uptime_min": int((time.time() - STARTED) / 60)})
+            write_status({**BASE_STATUS, "stats": dict(STATS), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)
