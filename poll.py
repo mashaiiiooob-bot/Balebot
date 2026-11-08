@@ -30,6 +30,7 @@ from news_filter import is_news, is_ad, has_dropword
 from profanity import has_profanity
 from dedupe import signature, is_duplicate
 import ai as ai_mod
+from promo import promo_loop
 from state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -479,6 +480,7 @@ async def run():
     tmpdir = tempfile.mkdtemp(prefix="balebot_")
     deadline = time.monotonic() + settings.LOOP_SECONDS
 
+    promo_stop, promo_task = asyncio.Event(), None
     await client.connect()
     try:
         if not await client.is_user_authorized():
@@ -506,6 +508,10 @@ async def run():
         await asyncio.to_thread(AIC.init)
         BASE_STATUS["ai"] = AIC.info()
         scrub = collect_names(entities)
+        if settings.PROMO_LOOP == "on":
+            promo_task = asyncio.create_task(promo_loop(bale, state, promo_stop, settings.BALE_DESTINATION,
+                                                        settings.PROMO_TEXT, settings.PROMO_INTERVAL, settings.PROMO_VISIBLE))
+            log.info("Promo loop is ON (interval=%ss, visible=%ss)", settings.PROMO_INTERVAL, settings.PROMO_VISIBLE)
         last_ping = 0.0
         wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی
         while True:
@@ -535,6 +541,12 @@ async def run():
                 pass
         return 0
     finally:
+        try:
+            promo_stop.set()
+            if promo_task:
+                await asyncio.wait_for(promo_task, timeout=20)  # پیامِ در حال نمایش پاک شود
+        except Exception:
+            pass
         state.save()
         await client.disconnect()
         shutil.rmtree(tmpdir, ignore_errors=True)

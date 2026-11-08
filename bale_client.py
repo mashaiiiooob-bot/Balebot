@@ -51,6 +51,9 @@ class BaleClient:
             result = self._post("sendMessage", {"chat_id": chat_id, "text": chunk})
         return result
 
+    def delete_message(self, chat_id, message_id):
+        return self._post("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+
     def send_media(self, chat_id, path, caption, media_type):
         method = {
             "photo": "sendPhoto",

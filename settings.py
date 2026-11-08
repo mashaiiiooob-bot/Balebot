@@ -31,6 +31,11 @@ DROP_WORDS = list(dict.fromkeys(_DEFAULT_DROP_WORDS + [x.strip() for x in (os.en
 PROFANITY_MIN_LEVEL = int(_get("PROFANITY_MIN_LEVEL", "1"))
 BENCH_PER_DAY = int(_get("AI_BENCH_PER_DAY", "60"))   # تعداد پیام‌های نمونه برای مقایسه‌ی سرویس‌ها در روز
 BENCH_RATE = float(_get("AI_BENCH_RATE", "0.3"))
+# حلقه‌ی پیام تکرارشونده (پیش‌فرض خاموش). روشن کردن: Secret با نام PROMO_LOOP و مقدار on
+PROMO_LOOP = _get("PROMO_LOOP", "off").lower()
+PROMO_TEXT = _get("PROMO_TEXT", "آیدی ما در تلگرام : @Bale_Dr")
+PROMO_INTERVAL = max(20, int(_get("PROMO_INTERVAL", "60")))      # فاصله‌ی ارسال‌ها (حداقل ۲۰ ثانیه)
+PROMO_VISIBLE = max(1, int(_get("PROMO_VISIBLE", "50")))         # مدت ماندن پیام قبل از حذف
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 

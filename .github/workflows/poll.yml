@@ -70,6 +70,10 @@ jobs:
           AI_MODE: ${{ secrets.AI_MODE }}
           AI_STRATEGY: ${{ secrets.AI_STRATEGY }}
           AI_GATE: ${{ secrets.AI_GATE }}
+          PROMO_LOOP: ${{ secrets.PROMO_LOOP }}
+          PROMO_TEXT: ${{ secrets.PROMO_TEXT }}
+          PROMO_INTERVAL: ${{ secrets.PROMO_INTERVAL }}
+          PROMO_VISIBLE: ${{ secrets.PROMO_VISIBLE }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
