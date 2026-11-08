@@ -190,7 +190,7 @@ async def apply_ai(reason, sig, text, state):
         STATS["ai_skipped"] += 1
         return reason
     STATS["ai_calls"] += 1
-    verdict = await asyncio.to_thread(AIC.judge_duplicate, text, [c[2]["text"] for c in cands])
+    verdict = await asyncio.to_thread(AIC.judge_duplicate, text, [c[2]["text"] for c in cands], state)
     if verdict is None:
         STATS["ai_errors"] += 1
         return reason
@@ -432,7 +432,7 @@ async def run():
                 except Exception as exc:
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
-            write_status({**BASE_STATUS, "stats": dict(STATS), "uptime_min": int((time.time() - STARTED) / 60)})
+            write_status({**BASE_STATUS, "stats": dict(STATS), "ai_stats": dict(AIC.stats) if AIC else {}, "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)

@@ -267,7 +267,7 @@ import asyncio as _aio
 class FakeAI:
     def __init__(self, mode, verdict): self.mode, self.verdict, self.calls = mode, verdict, 0
     def allow(self, state): return True
-    def judge_duplicate(self, new, olds): self.calls += 1; return self.verdict
+    def judge_duplicate(self, new, olds, state=None): self.calls += 1; return self.verdict
 def _reset():
     poll.RECENT.clear()
     for k in poll.STATS: poll.STATS[k] = 0
@@ -304,11 +304,47 @@ assert _aio.run(poll.apply_ai(None, far, "x", stx)) is None and fa.calls == 0
 settings.DROP_WORDS[:] = ["رژیم"]
 assert poll.classify("رژیم", "رژیم صهیونیستی", stx)[0] == "dropword"
 assert _aio.run(poll.apply_ai("dropword", sig, "x", stx)) == "dropword"
-# بودجه‌ی روزانه و کلید در لاگ نیست
+# چندسرویسی: failover، vote، بودجه، سازگاری با نبودن کلید
 import ai as ai_mod
-os.environ["GEMINI_API_KEY"] = "k"; os.environ["AI_DAILY_LIMIT"] = "2"; os.environ["AI_MODE"] = "on"
-real = ai_mod.AI(); real.backend = "gl"; real._last = 0
-assert real.allow(stx); real._last = 0; assert real.allow(stx); real._last = 0; assert not real.allow(stx)
-assert ai_mod.AI().mode == "on" and (os.environ.pop("GEMINI_API_KEY") or True) and ai_mod.AI().mode == "off"
-os.environ.pop("AI_DAILY_LIMIT"); os.environ.pop("AI_MODE"); poll.AIC = None; _reset()
+class FP(ai_mod.Provider):
+    name = "fake"
+    def __init__(self, name, results, limit=100):
+        self.name = name; self.key = "k"; self.limit = limit; self.model = "m"; self.probe = "ok"; self.ok = True
+        self._last = 0.0; self._blocked_until = 0.0; self.min_interval = 0; self.results = list(results); self.calls = 0
+    def _generate(self, text):
+        self.calls += 1; r = self.results.pop(0)
+        return (200, r) if isinstance(r, dict) else (r, None)
+DUP = {"same_event": True, "adds_new_info": False}; NEW = {"same_event": True, "adds_new_info": True}
+def mk(strategy, *provs):
+    for k in ("GEMINI_API_KEY", "GROQ_API_KEY"): os.environ.pop(k, None)
+    os.environ["GEMINI_API_KEY"] = "x"; a = ai_mod.AI(); a.providers = list(provs); a.strategy = strategy; a.mode = "on"; return a
+s_ = State(tempfile.mkdtemp() + "/b.json")
+# failover: اولی خطا (500) می‌دهد → دومی جواب می‌دهد
+a, b = FP("a", [500]), FP("b", [DUP]); ai = mk("failover", a, b)
+assert ai.judge_duplicate("n", ["o"], s_) is True and a.calls == 1 and b.calls == 1 and ai.stats["a_error"] == 1
+# failover: اولی سالم است → دومی صدا زده نمی‌شود
+a, b = FP("a", [NEW]), FP("b", [DUP]); ai = mk("failover", a, b)
+assert ai.judge_duplicate("n", ["o"], s_) is False and b.calls == 0
+# vote: هر دو «تکراری» → تکراری
+a, b = FP("a", [DUP]), FP("b", [DUP]); ai = mk("vote", a, b)
+assert ai.judge_duplicate("n", ["o"], s_) is True
+# vote: اختلاف نظر → تکراری حساب نمی‌شود (پیام ارسال می‌شود)
+a, b = FP("a", [DUP]), FP("b", [NEW]); ai = mk("vote", a, b)
+assert ai.judge_duplicate("n", ["o"], s_) is False and ai.stats["disagree"] == 1
+# همه شکست خوردند → None (تصمیم قانون‌ها)
+a, b = FP("a", [429]), FP("b", [500]); ai = mk("failover", a, b)
+assert ai.judge_duplicate("n", ["o"], s_) is None
+assert a._blocked_until > time.monotonic()  # 429 → ده دقیقه استراحت
+# خروجی مخرب/نامعتبر → None
+a = FP("a", [{"same_event": "yes", "adds_new_info": 1}]); ai = mk("failover", a)
+assert ai.judge_duplicate("n", ["o"], s_) is None
+# بودجه‌ی روزانه‌ی هر سرویس جدا
+a = FP("budget_p", [DUP, DUP, DUP], limit=2); ai = mk("failover", a)
+assert ai.judge_duplicate("n", ["o"], s_) is True and ai.judge_duplicate("n", ["o"], s_) is True
+assert ai.judge_duplicate("n", ["o"], s_) is None and not ai.allow(s_)
+# بدون هیچ کلیدی: خاموش
+for k in ("GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY"): os.environ.pop(k, None)
+assert ai_mod.AI().mode == "off"
+os.environ["GROQ_API_KEY"] = "y"; assert [p.name for p in ai_mod.AI().providers] == ["groq"]
+os.environ.pop("GROQ_API_KEY"); os.environ.pop("AI_MODE", None); poll.AIC = None; _reset()
 print("AI LAYER OK")

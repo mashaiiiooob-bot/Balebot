@@ -68,6 +68,11 @@ jobs:
           DROP_WORDS: ${{ secrets.DROP_WORDS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_MODE: ${{ secrets.AI_MODE }}
+          AI_STRATEGY: ${{ secrets.AI_STRATEGY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           DROP_WORDS_EXTRA: ${{ secrets.DROP_WORDS_EXTRA }}
           BLOCKLIST_EXTRA: ${{ secrets.BLOCKLIST_EXTRA }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}

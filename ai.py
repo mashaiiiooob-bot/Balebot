@@ -1,6 +1,8 @@
-"""لایه‌ی هوش مصنوعی (Gemini، سطح رایگان): فقط برای موارد مرزی تشخیص «پیام تکراری».
-قوانین سخت (واژه‌ی ممنوعه، تبلیغ، حذف منبع) همیشه قبل از این لایه اجرا می‌شوند و هوش مصنوعی هرگز آن‌ها را دور نمی‌زند.
-هر خطا/سهمیه‌ی تمام‌شده = برگشت به تصمیم قانون‌ها (fail-open). کلید هرگز لاگ یا ذخیره نمی‌شود."""
+"""لایه‌ی هوش مصنوعی چندسرویسی (فقط سطح‌های رایگان) برای موارد مرزیِ «پیام تکراری».
+- Gemini اولین سرویس است؛ سرویس‌های اختیاری: Groq، Cerebras، Mistral، OpenRouter (هر کدام فقط اگر کلیدش باشد).
+- AI_STRATEGY=failover (پیش‌فرض): اولین سرویسِ سالم جواب می‌دهد.  AI_STRATEGY=vote: فقط وقتی دو سرویس هر دو «تکراری» بگویند حذف می‌شود.
+- قوانین سخت (واژه‌ی ممنوعه، تبلیغ، حذف منبع) همیشه قبل از این لایه اجرا می‌شوند؛ خطا/سهمیه‌ی تمام‌شده = تصمیم قانون‌ها (fail-open).
+- کلیدها هرگز لاگ یا ذخیره نمی‌شوند."""
 import json
 import os
 import re
@@ -24,59 +26,98 @@ def _cut(s, n=600):
     return (s or "")[:n].replace("\n", " ")
 
 
-class AI:
-    def __init__(self):
-        self.key = os.environ.get("GEMINI_API_KEY", "").strip()
-        mode = (os.environ.get("AI_MODE", "") or "shadow").strip().lower()
-        self.mode = mode if mode in ("off", "shadow", "on") else "shadow"
-        if not self.key:
-            self.mode = "off"
-        self.daily_limit = int(os.environ.get("AI_DAILY_LIMIT", "") or 500)
-        self.backend = None
+def _parse_json(raw):
+    raw = re.sub(r"^```(?:json)?|```$", "", (raw or "").strip(), flags=re.M).strip()
+    return json.loads(raw)
+
+
+def _verdict(out):
+    if not isinstance(out, dict):
+        return None
+    same, adds = out.get("same_event"), out.get("adds_new_info")
+    if not isinstance(same, bool) or not isinstance(adds, bool):
+        return None
+    return same and not adds
+
+
+def _post(url, body, headers=None):
+    try:
+        r = requests.post(url, json=body, headers=headers or {}, timeout=20)
+        return r.status_code, (r.json() if r.content else {})
+    except Exception as exc:  # آدرس/کلید هرگز چاپ نمی‌شود
+        return 0, {"_exc": type(exc).__name__}
+
+
+class Provider:
+    name = "base"
+    min_interval = 5.0
+    default_limit = 500
+
+    def __init__(self, key):
+        self.key = key.strip()
+        self.limit = int(os.environ.get(f"AI_LIMIT_{self.name.upper()}", "") or self.default_limit)
         self.model = None
         self.probe = "not_run"
+        self.ok = False
         self._last = 0.0
         self._blocked_until = 0.0
 
-    # ---------- شبکه ----------
-    def _post(self, url, body, headers=None):
-        try:
-            r = requests.post(url, json=body, headers=headers or {}, timeout=20)
-            data = r.json() if r.content else {}
-            return r.status_code, data
-        except Exception as exc:  # آدرس (که کلید دارد) هرگز چاپ نمی‌شود
-            return 0, {"_exc": type(exc).__name__}
+    def _generate(self, text):  # -> (status, parsed_json | None)
+        raise NotImplementedError
+
+    def init(self):
+        status, out = self._generate('Reply with JSON only: {"ok": true}')
+        self.ok = status == 200 and out is not None
+        self.probe = "ok" if self.ok else f"http_{status}"
+
+    def ready(self, state):
+        if not self.ok or time.monotonic() < self._blocked_until or time.monotonic() - self._last < self.min_interval:
+            return False
+        rec = state.data.setdefault("ai", {})
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        if rec.get("day") != day:
+            rec.clear(); rec["day"] = day
+        rec.setdefault(self.name, 0)
+        return rec[self.name] < self.limit
+
+    def judge(self, new_text, old_texts, state):
+        state.data["ai"][self.name] += 1  # کلید از قبل در ready() ساخته شده؛ فقط عدد عوض می‌شود
+        state.dirty = True
+        self._last = time.monotonic()
+        body = PROMPT + "".join(f"OLD {i}: {_cut(t)}\n" for i, t in enumerate(old_texts, 1)) + f"NEW: {_cut(new_text)}"
+        status, out = self._generate(body)
+        if status == 429:
+            self._blocked_until = time.monotonic() + 600
+        return _verdict(out) if status == 200 else None
+
+
+class Gemini(Provider):
+    name = "gemini"
+    min_interval = 5.0
+    default_limit = 500
+    backend = None
 
     def _generate(self, text):
         body = {"contents": [{"role": "user", "parts": [{"text": text}]}],
                 "generationConfig": {"temperature": 0, "maxOutputTokens": 120, "responseMimeType": "application/json"}}
         if self.backend == "gl":
-            status, data = self._post(f"{GL}/models/{self.model}:generateContent", body, {"x-goog-api-key": self.key})
+            status, data = _post(f"{GL}/models/{self.model}:generateContent", body, {"x-goog-api-key": self.key})
         else:
-            status, data = self._post(f"{VX}/{self.model}:generateContent?key={self.key}", body)
+            status, data = _post(f"{VX}/{self.model}:generateContent?key={self.key}", body)
         if status != 200:
             return status, None
         try:
-            raw = data["candidates"][0]["content"]["parts"][0]["text"]
-            raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
-            return 200, json.loads(raw)
+            return 200, _parse_json(data["candidates"][0]["content"]["parts"][0]["text"])
         except Exception:
             return 200, None
 
-    # ---------- راه‌اندازی ----------
     def init(self):
-        if self.mode == "off":
-            self.probe = "no_key"
-            return
-        # ۱) Google AI Studio (کلیدهای AIza...)  ۲) Vertex express (کلیدهای AQ....)
-        try:
+        try:  # ۱) Google AI Studio (AIza...)  ۲) Vertex express (AQ....)
             r = requests.get(f"{GL}/models?pageSize=200", headers={"x-goog-api-key": self.key}, timeout=20)
             if r.status_code == 200:
-                names = []
-                for m in r.json().get("models", []):
-                    if "generateContent" in m.get("supportedGenerationMethods", []) and "flash-lite" in m["name"]:
-                        names.append(m["name"].split("/")[-1])
-                stable = [n for n in names if "preview" not in n and "exp" not in n and "image" not in n and "tts" not in n]
+                names = [m["name"].split("/")[-1] for m in r.json().get("models", [])
+                         if "generateContent" in m.get("supportedGenerationMethods", []) and "flash-lite" in m["name"]]
+                stable = [n for n in names if not re.search(r"preview|exp|image|tts", n)]
                 pick = sorted(stable or names, key=lambda n: [float(x) for x in re.findall(r"\d+\.?\d*", n)] or [0])
                 if pick:
                     self.backend, self.model = "gl", pick[-1]
@@ -84,43 +125,117 @@ class AI:
             pass
         if not self.backend:
             self.backend, self.model = "vertex", "gemini-2.5-flash-lite"
-        status, out = self._generate('Reply with JSON only: {"ok": true}')
-        if status == 200 and out is not None:
-            self.probe = "ok"
-        else:
-            self.probe = f"http_{status}"
-            if self.backend == "vertex" or status in (400, 401, 403):
-                self.mode = "off"  # کلید کار نمی‌کند؛ بدون هوش مصنوعی ادامه می‌دهیم
+        super().init()
+
+
+class OpenAICompat(Provider):
+    base = ""
+    prefer = ()
+    fallback_model = ""
+
+    def _generate(self, text):
+        body = {"model": self.model, "temperature": 0, "max_tokens": 120,
+                "messages": [{"role": "user", "content": text}], "response_format": {"type": "json_object"}}
+        status, data = _post(f"{self.base}/chat/completions", body, {"Authorization": f"Bearer {self.key}"})
+        if status == 400:  # بعضی مدل‌ها response_format را نمی‌پذیرند
+            body.pop("response_format")
+            status, data = _post(f"{self.base}/chat/completions", body, {"Authorization": f"Bearer {self.key}"})
+        if status != 200:
+            return status, None
+        try:
+            return 200, _parse_json(data["choices"][0]["message"]["content"])
+        except Exception:
+            return 200, None
+
+    def init(self):
+        self.model = self.fallback_model
+        try:
+            r = requests.get(f"{self.base}/models", headers={"Authorization": f"Bearer {self.key}"}, timeout=20)
+            if r.status_code == 200:
+                ids = [m.get("id", "") for m in r.json().get("data", [])]
+                for want in self.prefer:
+                    hit = [i for i in ids if want in i and not re.search(r"whisper|guard|tts|embed", i)]
+                    if hit:
+                        self.model = sorted(hit)[0]
+                        break
+        except Exception:
+            pass
+        super().init()
+
+
+class Groq(OpenAICompat):
+    name, base, min_interval, default_limit = "groq", "https://api.groq.com/openai/v1", 3.0, 800
+    prefer, fallback_model = ("llama-3.3-70b-versatile", "llama-3.3-70b", "70b"), "llama-3.3-70b-versatile"
+
+
+class Cerebras(OpenAICompat):
+    name, base, min_interval, default_limit = "cerebras", "https://api.cerebras.ai/v1", 3.0, 800
+    prefer, fallback_model = ("llama-3.3-70b", "llama3.3-70b", "70b", "llama"), "llama-3.3-70b"
+
+
+class Mistral(OpenAICompat):
+    name, base, min_interval, default_limit = "mistral", "https://api.mistral.ai/v1", 5.0, 500
+    prefer, fallback_model = ("mistral-small-latest", "mistral-small"), "mistral-small-latest"
+
+
+class OpenRouter(OpenAICompat):
+    name, base, min_interval, default_limit = "openrouter", "https://openrouter.ai/api/v1", 8.0, 40
+    prefer, fallback_model = ("meta-llama/llama-3.3-70b-instruct:free",), "meta-llama/llama-3.3-70b-instruct:free"
+
+
+ORDER = [(Gemini, "GEMINI_API_KEY"), (Groq, "GROQ_API_KEY"), (Cerebras, "CEREBRAS_API_KEY"),
+         (Mistral, "MISTRAL_API_KEY"), (OpenRouter, "OPENROUTER_API_KEY")]
+
+
+class AI:
+    def __init__(self):
+        mode = (os.environ.get("AI_MODE", "") or "shadow").strip().lower()
+        self.mode = mode if mode in ("off", "shadow", "on") else "shadow"
+        self.strategy = (os.environ.get("AI_STRATEGY", "") or "failover").strip().lower()
+        if self.strategy not in ("failover", "vote"):
+            self.strategy = "failover"
+        self.providers = [cls(os.environ[env]) for cls, env in ORDER if os.environ.get(env, "").strip()]
+        if not self.providers:
+            self.mode = "off"
+        self.stats = {}
+
+    def init(self):
+        for p in self.providers:
+            p.init()
+        self.providers = [p for p in self.providers if p.ok] or []
+        if not self.providers:
+            self.mode = "off"
 
     def info(self):
-        return {"mode": self.mode, "backend": self.backend, "model": self.model, "probe": self.probe}
+        return {"mode": self.mode, "strategy": self.strategy,
+                "providers": {p.name: {"model": p.model, "probe": p.probe} for p in self.providers}}
 
-    # ---------- بودجه ----------
     def allow(self, state):
-        now = time.monotonic()
-        if self.mode == "off" or now < self._blocked_until or now - self._last < 5:
-            return False
-        day = time.strftime("%Y-%m-%d", time.gmtime())
-        rec = state.data.setdefault("ai", {})
-        if rec.get("day") != day:
-            rec.clear(); rec.update({"day": day, "n": 0})
-        if rec["n"] >= self.daily_limit:
-            return False
-        rec["n"] += 1
-        state.dirty = True
-        self._last = now
-        return True
+        """آیا حداقل یک سرویس آماده است؟ (در thread اصلی؛ کلیدهای بودجه‌ی state هم اینجا ساخته می‌شوند.)"""
+        return self.mode != "off" and any(p.ready(state) for p in self.providers)
 
-    # ---------- قضاوت ----------
-    def judge_duplicate(self, new_text, old_texts):
-        """True = تکراری (همان واقعه و بدون اطلاعات تازه)، False = تازه، None = نامعلوم/خطا."""
-        body = PROMPT + "".join(f"OLD {i}: {_cut(t)}\n" for i, t in enumerate(old_texts, 1)) + f"NEW: {_cut(new_text)}"
-        status, out = self._generate(body)
-        if status == 429:
-            self._blocked_until = time.monotonic() + 600
-        if status != 200 or not isinstance(out, dict):
+    def _count(self, key):
+        self.stats[key] = self.stats.get(key, 0) + 1
+
+    def judge_duplicate(self, new_text, old_texts, state):
+        """True = تکراری، False = تازه، None = نامعلوم. در حالت vote فقط اگر هر دو «تکراری» بگویند، True."""
+        need = 2 if self.strategy == "vote" else 1
+        verdicts = []
+        for p in self.providers:
+            if len(verdicts) >= need:
+                break
+            if not p.ready(state):
+                continue
+            v = p.judge(new_text, old_texts, state)
+            if v is None:
+                self._count(f"{p.name}_error")
+                continue
+            self._count(f"{p.name}_ok")
+            verdicts.append(v)
+        if not verdicts:
             return None
-        same, adds = out.get("same_event"), out.get("adds_new_info")
-        if not isinstance(same, bool) or not isinstance(adds, bool):
-            return None
-        return same and not adds
+        if need == 2 and len(verdicts) == 2:
+            if verdicts[0] != verdicts[1]:
+                self._count("disagree")
+            return verdicts[0] and verdicts[1]
+        return verdicts[0]
