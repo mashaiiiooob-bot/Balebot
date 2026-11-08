@@ -377,3 +377,11 @@ for k in ("GEMINI_API_KEY",): os.environ.pop(k, None)
 os.environ["DEEPSEEK_API_KEY"] = "z"; assert [p.name for p in ai_mod.AI().providers] == ["deepseek"]; os.environ.pop("DEEPSEEK_API_KEY")
 poll.AIC = None; _reset()
 print("GATE OK")
+
+# Cloudflare: فقط با توکن فعال می‌شود و بعد از Gemini/Groq می‌آید
+for k in list(os.environ):
+    if k.endswith("_API_KEY") or k == "CLOUDFLARE_API_TOKEN": os.environ.pop(k)
+os.environ["CLOUDFLARE_API_TOKEN"] = "t"; os.environ["GROQ_API_KEY"] = "g"; os.environ["GEMINI_API_KEY"] = "m"
+assert [p.name for p in ai_mod.AI().providers] == ["gemini", "groq", "cloudflare"]
+for k in ("CLOUDFLARE_API_TOKEN", "GROQ_API_KEY", "GEMINI_API_KEY"): os.environ.pop(k)
+print("CLOUDFLARE ORDER OK")

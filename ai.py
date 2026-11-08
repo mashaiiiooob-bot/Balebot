@@ -215,6 +215,32 @@ class OpenRouter(OpenAICompat):
     prefer, fallback_model = ("meta-llama/llama-3.3-70b-instruct:free",), "meta-llama/llama-3.3-70b-instruct:free"
 
 
+class Cloudflare(OpenAICompat):
+    """Workers AI (سطح رایگان ~۱۰هزار نورون در روز). نیاز به CLOUDFLARE_API_TOKEN و شناسه‌ی حساب (یا دسترسی خواندن حساب برای کشف خودکار)."""
+    name, min_interval, default_limit = "cloudflare", 4.0, 400
+    candidates = ("@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/google/gemma-3-12b-it", "@cf/openai/gpt-oss-120b",
+                  "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/qwen/qwen3-30b-a3b-fp8")
+
+    def init(self):
+        acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        if not acct:
+            try:
+                r = requests.get("https://api.cloudflare.com/client/v4/accounts", headers={"Authorization": f"Bearer {self.key}"}, timeout=20)
+                res = r.json().get("result", []) if r.status_code == 200 else []
+                acct = res[0]["id"] if len(res) >= 1 else ""
+            except Exception:
+                acct = ""
+        if not acct:
+            self.ok, self.probe = False, "no_account_id"
+            return
+        self.base = f"https://api.cloudflare.com/client/v4/accounts/{acct}/ai/v1"
+        for model in self.candidates:  # اولین مدلی که واقعاً جواب بدهد
+            self.model = model
+            Provider.init(self)
+            if self.ok:
+                return
+
+
 class DeepSeek(OpenAICompat):
     # توجه: سرویس رایگان دائمی ندارد (اعتبار/سرور خارج از ایران)؛ آخرین گزینه با سقف کم
     name, base, min_interval, default_limit = "deepseek", "https://api.deepseek.com", 3.0, 150
@@ -223,6 +249,7 @@ class DeepSeek(OpenAICompat):
 
 ORDER = [(Gemini, "GEMINI_API_KEY"), (Groq, "GROQ_API_KEY"), (Cerebras, "CEREBRAS_API_KEY"),
          (Mistral, "MISTRAL_API_KEY"), (OpenRouter, "OPENROUTER_API_KEY"), (DeepSeek, "DEEPSEEK_API_KEY")]
+ORDER.insert(2, (Cloudflare, "CLOUDFLARE_API_TOKEN"))
 
 
 class AI:
