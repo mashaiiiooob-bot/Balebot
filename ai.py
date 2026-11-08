@@ -68,7 +68,7 @@ class Provider:
     def init(self):
         status, out = self._generate('Reply with JSON only: {"ok": true}')
         self.ok = status == 200 and out is not None
-        self.probe = "ok" if self.ok else f"http_{status}"
+        self.probe = "ok" if self.ok else (f"http_{status}" if status != 200 else "bad_json")
 
     def ready(self, state):
         if not self.ok or time.monotonic() < self._blocked_until or time.monotonic() - self._last < self.min_interval:
@@ -198,17 +198,19 @@ class AI:
         if not self.providers:
             self.mode = "off"
         self.stats = {}
+        self.failed = []
 
     def init(self):
         for p in self.providers:
             p.init()
-        self.providers = [p for p in self.providers if p.ok] or []
+        self.failed = [p for p in self.providers if not p.ok]
+        self.providers = [p for p in self.providers if p.ok]
         if not self.providers:
             self.mode = "off"
 
     def info(self):
         return {"mode": self.mode, "strategy": self.strategy,
-                "providers": {p.name: {"model": p.model, "probe": p.probe} for p in self.providers}}
+                "providers": {p.name: {"model": p.model, "probe": p.probe} for p in self.providers + self.failed}}
 
     def allow(self, state):
         """آیا حداقل یک سرویس آماده است؟ (در thread اصلی؛ کلیدهای بودجه‌ی state هم اینجا ساخته می‌شوند.)"""
