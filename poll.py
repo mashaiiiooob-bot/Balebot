@@ -34,6 +34,7 @@ log = logging.getLogger("balebot")
 
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
+         "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
          "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
@@ -207,6 +208,23 @@ async def apply_ai(reason, sig, text, state):
     return reason
 
 
+async def apply_gate(text, state):
+    """دروازه‌ی نهایی: فقط می‌تواند پیامِ آماده‌ی ارسال را «رد» کند؛ هرگز چیزی را که قانون‌ها رد کرده‌اند آزاد نمی‌کند."""
+    if AIC is None or AIC.mode == "off" or AIC.gate == "off" or not AIC.allow(state):
+        return None
+    STATS["gate_calls"] += 1
+    res = await asyncio.to_thread(AIC.judge_gate, text, settings.DROP_WORDS, state)
+    if res is None:
+        STATS["gate_errors"] += 1
+        return None
+    banned, ad = res
+    if banned or ad:
+        STATS["sh_gate_banned" if banned else "sh_gate_ad"] += 1
+        if AIC.gate == "on":
+            return "ai_banned" if banned else "ai_ad"
+    return None
+
+
 def classify(raw, text, state):
     """None = ارسال شود (همراه امضای محتوا)؛ وگرنه دلیلِ ارسال‌نشدن."""
     if not raw.strip():
@@ -254,6 +272,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         if reason in (None, "duplicate"):
             sig = sig or signature(text)
             reason = await apply_ai(reason, sig, text, state)
+        if reason is None:
+            reason = await apply_gate(text, state)
         if reason:
             STATS[reason] += 1
         else:

@@ -216,10 +216,10 @@ importlib.reload(settings)
 print("NEW FILTERS OK")
 
 # ---------- وحید + «اولین چنلی که خبر تعطیلی ...» ----------
-os.environ["DROP_WORDS"] = "شاه"; os.environ["DROP_WORDS_EXTRA"] = "وحید"
+os.environ["DROP_WORDS"] = "شاه"; os.environ["DROP_WORDS_EXTRA"] = "=وحید"
 os.environ["BLOCKLIST"] = "TCH"; os.environ["BLOCKLIST_EXTRA"] = "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید"
 importlib.reload(settings)
-assert "وحید" in settings.DROP_WORDS and settings.DROP_WORDS.count("شاه") == 1 and "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید" in settings.BLOCKLIST
+assert "=وحید" in settings.DROP_WORDS and settings.DROP_WORDS.count("شاه") == 1 and "جمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید" in settings.BLOCKLIST
 assert has_dropword("وحید گفت مدارس تعطیل است", settings.DROP_WORDS) and not has_dropword("وحیدی گفت", settings.DROP_WORDS)
 msg = "مدارس تهران فردا تعطیل است\n\nجمله‌ی تبلیغی نمونه که بالای پایین‌نویس می‌آید❤️👇"
 assert clean_message(msg, None, [], settings.BLOCKLIST) == "مدارس تهران فردا تعطیل است", repr(clean_message(msg, None, [], settings.BLOCKLIST))
@@ -348,3 +348,32 @@ assert ai_mod.AI().mode == "off"
 os.environ["GROQ_API_KEY"] = "y"; assert [p.name for p in ai_mod.AI().providers] == ["groq"]
 os.environ.pop("GROQ_API_KEY"); os.environ.pop("AI_MODE", None); poll.AIC = None; _reset()
 print("AI LAYER OK")
+
+# ================= تطبیق محکم + دروازه‌ی نهایی =================
+W2 = ["جمهوری", "پهلوی", "شاه", "دی", "رژیم", "=وحید"]
+for hit in ["جمهوری اسلامی", "جمهورى اسلامى", "جَمهوری", "ﺟﻤﻬﻮﺭﯼ", "جمهوری‌ها", "جمهوریت", "#جمهوری", "«جمهوری»",
+            "جمهوري", "ج‌مهوری", "پهلوی‌ها", "شاهی", "شاهان", "۱۸ دی", "رژیم‌های", "وحید گفت"]:
+    assert has_dropword(hit, W2), hit
+for miss in ["شاهد عینی", "دیروز", "مدیر", "پادشاه", "شاهرود", "وحیدی گفت"]:   # «=وحید» دقیق است
+    assert not has_dropword(miss, W2), miss
+# دروازه‌ی نهایی: shadow ثبت می‌کند، on رد می‌کند، خطا = ارسال، و هرگز چیزی را آزاد نمی‌کند
+class GateAI:
+    def __init__(self, gate, res): self.mode, self.gate, self.res, self.stats = "on", gate, res, {}
+    def allow(self, s): return True
+    def judge_gate(self, text, terms, s): return self.res
+_reset()
+poll.AIC = GateAI("shadow", (True, False)); assert _aio.run(poll.apply_gate("x", stx)) is None and poll.STATS["sh_gate_banned"] == 1
+poll.AIC = GateAI("on", (True, False));  assert _aio.run(poll.apply_gate("x", stx)) == "ai_banned"
+poll.AIC = GateAI("on", (False, True));  assert _aio.run(poll.apply_gate("x", stx)) == "ai_ad"
+poll.AIC = GateAI("on", (False, False)); assert _aio.run(poll.apply_gate("x", stx)) is None
+poll.AIC = GateAI("on", None);           assert _aio.run(poll.apply_gate("x", stx)) is None and poll.STATS["gate_errors"] == 1
+poll.AIC = GateAI("off", (True, True));  assert _aio.run(poll.apply_gate("x", stx)) is None
+# مدیر چندسرویسی: دروازه با failover
+ga, gb = FP("ga", [500]), FP("gb", [{"banned": True, "ad": False}]); aig = mk("failover", ga, gb)
+assert aig.judge_gate("n", ["t"], s_) == (True, False)
+ga, gb = FP("ga2", [{"banned": "yes"}]), FP("gb2", [{"banned": False, "ad": False}]); aig = mk("failover", ga, gb)
+assert aig.judge_gate("n", ["t"], s_) == (False, False)  # پاسخ نامعتبرِ اولی نادیده، دومی جواب می‌دهد
+for k in ("GEMINI_API_KEY",): os.environ.pop(k, None)
+os.environ["DEEPSEEK_API_KEY"] = "z"; assert [p.name for p in ai_mod.AI().providers] == ["deepseek"]; os.environ.pop("DEEPSEEK_API_KEY")
+poll.AIC = None; _reset()
+print("GATE OK")

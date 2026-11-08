@@ -32,9 +32,25 @@ _INVITE = re.compile(r"t\.me/\+|t\.me/joinchat|telegram\.me/joinchat", re.I)
 _HANDLE = re.compile(r"(?<![\w.])@[A-Za-z]\w{3,}")
 
 
-def _an(text):
-    v = normalize((text or "").translate(_DIG)).replace("\u200c", " ")
-    return re.sub(r"\s+", " ", v)
+_ZERO = dict.fromkeys(map(ord, "\u200b\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\ufeff\u00ad"), None)
+_LET = str.maketrans({"ي": "ی", "ى": "ی", "ی": "ی", "ې": "ی", "ۍ": "ی", "ئ": "ی", "ك": "ک", "ڪ": "ک", "ة": "ه", "ۀ": "ه",
+                      "ہ": "ه", "ھ": "ه", "ۃ": "ه", "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ؤ": "و", "\u200c": " "})
+_MARKS = re.compile(r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]")
+SUFFIX = r"(?:ها|های|یی|ی|ان|ات|ای|ت|ش|شان|مان|تان|ه)?"
+
+
+def canon(text, join=False):
+    """نرمال‌سازی محکم: اشکال نمایشی/عربی حروف، حرکت‌ها، کشیده، حروف نامرئی، نیم‌فاصله، ارقام.
+    join=True: نیم‌فاصله حذف می‌شود (برای گرفتن «ج‌مهوری» که عمداً وسط کلمه نیم‌فاصله دارد)."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", text or "").translate(_ZERO)
+    if join:
+        t = t.replace("\u200c", "")
+    t = _MARKS.sub("", t).casefold().translate(_LET).translate(_DIG)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+_an = canon
 
 
 def is_ad(text):
@@ -49,9 +65,15 @@ def is_ad(text):
 
 
 def has_dropword(text, words):
-    value = " " + _an(text) + " "
+    """واژه‌ی کامل، با تحمل پسوندهای رایج فارسی (ها، ی، ان، ...). «=واژه» یعنی فقط دقیقاً همان واژه."""
+    values = (" " + canon(text) + " ", " " + canon(text, join=True) + " ")
     for w in words:
-        nw = _an(w)
-        if nw and re.search(r"(?<!\w)" + re.escape(nw) + r"(?!\w)", value):
+        exact = w.startswith("=")
+        nw = canon(w.lstrip("="))
+        if not nw:
+            continue
+        tail = "" if exact or len(nw) <= 2 else SUFFIX
+        pat = r"(?<!\w)" + re.escape(nw) + tail + r"(?!\w)"
+        if any(re.search(pat, v) for v in values):
             return True
     return False
