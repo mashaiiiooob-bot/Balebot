@@ -261,3 +261,54 @@ for bad in ["شاهزاده رضا پهلوی", "به گزارش رادیو اک
     assert poll.classify(bad, clean_message(bad, None, [], ["RadioxlTV", "RadioxITV"]), st3)[0] == "dropword", bad
 assert poll.classify("خبر فوری از سپاه پاسداران", "خبر فوری از سپاه پاسداران", st3)[0] is None
 print("FINAL OK")
+
+# ================= لایه‌ی هوش مصنوعی (با نسخه‌ی ساختگی) =================
+import asyncio as _aio
+class FakeAI:
+    def __init__(self, mode, verdict): self.mode, self.verdict, self.calls = mode, verdict, 0
+    def allow(self, state): return True
+    def judge_duplicate(self, new, olds): self.calls += 1; return self.verdict
+def _reset():
+    poll.RECENT.clear()
+    for k in poll.STATS: poll.STATS[k] = 0
+old_text = "تعطیلی مدارس شهر تهران فردا شنبه به دلیل آلودگی هوا اعلام شد و کلاس‌ها غیرحضوری برگزار می‌شود"
+mid_text = "مدارس تهران فردا شنبه به دلیل آلودگی هوا تعطیل شد"   # مرزی: هم‌موضوع ولی نه قطعاً تکراری
+def _prime():
+    _reset(); s = dedupe.signature(old_text)
+    poll.RECENT.append({"w": set(s["w"]), "n": set(s["n"]), "text": old_text, "t": time.time()})
+    return dedupe.signature(mid_text)
+stx = State(tempfile.mkdtemp() + "/s.json")
+
+# shadow: فقط ثبت می‌کند، تصمیم را عوض نمی‌کند
+sig = _prime(); poll.AIC = FakeAI("shadow", False)
+assert _aio.run(poll.apply_ai("duplicate", sig, mid_text, stx)) == "duplicate"
+assert poll.STATS["sh_dup_ai_new"] == 1 and poll.STATS["ai_rescued"] == 0
+
+# on: قانون می‌گوید تکراری، هوش مصنوعی می‌گوید خبر تازه → نجات
+sig = _prime(); poll.AIC = FakeAI("on", False)
+assert _aio.run(poll.apply_ai("duplicate", sig, mid_text, stx)) is None and poll.STATS["ai_rescued"] == 1
+# on: قانون می‌گوید تازه، هوش مصنوعی می‌گوید تکراری → رد
+sig = _prime(); poll.AIC = FakeAI("on", True)
+assert _aio.run(poll.apply_ai(None, sig, mid_text, stx)) == "duplicate" and poll.STATS["ai_caught"] == 1
+# خطا/نامعلوم → همان تصمیم قانون (fail-open)
+sig = _prime(); poll.AIC = FakeAI("on", None)
+assert _aio.run(poll.apply_ai("duplicate", sig, mid_text, stx)) == "duplicate" and poll.STATS["ai_errors"] == 1
+# قطعاً تکراری یا آشکارا متفاوت: اصلاً صدا زده نمی‌شود
+_reset(); s0 = dedupe.signature(old_text)
+poll.RECENT.append({"w": set(s0["w"]), "n": set(s0["n"]), "text": old_text, "t": time.time()})
+fa = FakeAI("on", False); poll.AIC = fa
+assert _aio.run(poll.apply_ai("duplicate", s0, old_text, stx)) == "duplicate" and fa.calls == 0
+far = dedupe.signature("قیمت دلار امروز در بازار آزاد افزایش یافت")
+assert _aio.run(poll.apply_ai(None, far, "x", stx)) is None and fa.calls == 0
+# هوش مصنوعی هرگز قوانین سخت را دور نمی‌زند: واژه‌ی ممنوعه/تبلیغ قبل از آن رد می‌شود
+settings.DROP_WORDS[:] = ["رژیم"]
+assert poll.classify("رژیم", "رژیم صهیونیستی", stx)[0] == "dropword"
+assert _aio.run(poll.apply_ai("dropword", sig, "x", stx)) == "dropword"
+# بودجه‌ی روزانه و کلید در لاگ نیست
+import ai as ai_mod
+os.environ["GEMINI_API_KEY"] = "k"; os.environ["AI_DAILY_LIMIT"] = "2"; os.environ["AI_MODE"] = "on"
+real = ai_mod.AI(); real.backend = "gl"; real._last = 0
+assert real.allow(stx); real._last = 0; assert real.allow(stx); real._last = 0; assert not real.allow(stx)
+assert ai_mod.AI().mode == "on" and (os.environ.pop("GEMINI_API_KEY") or True) and ai_mod.AI().mode == "off"
+os.environ.pop("AI_DAILY_LIMIT"); os.environ.pop("AI_MODE"); poll.AIC = None; _reset()
+print("AI LAYER OK")

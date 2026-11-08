@@ -26,13 +26,18 @@ from cleaner import clean_message
 from news_filter import is_news, is_ad, has_dropword
 from profanity import has_profanity
 from dedupe import signature, is_duplicate
+import ai as ai_mod
 from state import State
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
 
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
-STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0}
+STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
+         "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
+AIC = None
+RECENT = []  # فقط در حافظه (متن پاک‌شده‌ی پیام‌های ارسالی اخیر)؛ هرگز ذخیره یا منتشر نمی‌شود
 BASE_STATUS = {}
 STARTED = time.time()
 
@@ -157,6 +162,51 @@ async def fetch_new(client, entity, last_id):
     return None
 
 
+def ai_candidates(sig, now):
+    a, an = set(sig["w"]), set(sig["n"])
+    out = []
+    for e in RECENT:
+        if now - e["t"] > 21600 or (an and e["n"] and not (an <= e["n"] or e["n"] <= an)):
+            continue
+        inter = len(a & e["w"])
+        if inter < 3:
+            continue
+        out.append((inter / min(len(a), len(e["w"])), inter / len(a | e["w"]), e))
+    out.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return out[:3]
+
+
+async def apply_ai(reason, sig, text, state):
+    """فقط موارد مرزی به هوش مصنوعی می‌رسد. حالت shadow: ثبت می‌کند ولی تصمیم را عوض نمی‌کند."""
+    if AIC is None or AIC.mode == "off" or reason not in (None, "duplicate"):
+        return reason
+    cands = ai_candidates(sig, time.time())
+    if not cands:
+        return reason
+    ov, jc, _ = cands[0]
+    if (ov >= 0.9 and jc >= 0.7) or ov < 0.45:
+        return reason  # یا قطعاً تکراری، یا آشکارا متفاوت
+    if not AIC.allow(state):
+        STATS["ai_skipped"] += 1
+        return reason
+    STATS["ai_calls"] += 1
+    verdict = await asyncio.to_thread(AIC.judge_duplicate, text, [c[2]["text"] for c in cands])
+    if verdict is None:
+        STATS["ai_errors"] += 1
+        return reason
+    rule_dup = reason == "duplicate"
+    STATS[f"sh_{'dup' if rule_dup else 'new'}_ai_{'dup' if verdict else 'new'}"] += 1
+    if AIC.mode != "on":
+        return reason
+    if rule_dup and not verdict:
+        STATS["ai_rescued"] += 1
+        return None
+    if not rule_dup and verdict:
+        STATS["ai_caught"] += 1
+        return "duplicate"
+    return reason
+
+
 def classify(raw, text, state):
     """None = ارسال شود (همراه امضای محتوا)؛ وگرنه دلیلِ ارسال‌نشدن."""
     if not raw.strip():
@@ -201,12 +251,17 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         text = clean_message(raw, getattr(msg, "entities", None), names, settings.BLOCKLIST)
         STATS["seen"] += 1
         reason, sig = classify(raw, text, state)
+        if reason in (None, "duplicate"):
+            sig = sig or signature(text)
+            reason = await apply_ai(reason, sig, text, state)
         if reason:
             STATS[reason] += 1
         else:
             try:
                 await forward(bale, msg, text, tmpdir)
                 state.add_seen(sig, time.time())
+                RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
+                del RECENT[:-40]
                 STATS["sent"] += 1
                 log.info("Forwarded source=%s", tag)
             except FloodWaitError:
@@ -356,6 +411,10 @@ async def run():
         async def _on_new_message(event):
             wake.set()
 
+        global AIC
+        AIC = ai_mod.AI()
+        await asyncio.to_thread(AIC.init)
+        BASE_STATUS["ai"] = AIC.info()
         scrub = collect_names(entities)
         last_ping = 0.0
         wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی

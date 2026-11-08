@@ -66,6 +66,8 @@ jobs:
           SOURCES_ADD: ${{ secrets.SOURCES_ADD }}
           BLOCKLIST: ${{ secrets.BLOCKLIST }}
           DROP_WORDS: ${{ secrets.DROP_WORDS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_MODE: ${{ secrets.AI_MODE }}
           DROP_WORDS_EXTRA: ${{ secrets.DROP_WORDS_EXTRA }}
           BLOCKLIST_EXTRA: ${{ secrets.BLOCKLIST_EXTRA }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
