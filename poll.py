@@ -288,6 +288,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 raise
             except Exception as exc:
                 STATS["failed"] += 1
+                # فقط نوع خطا و پیام کوتاهِ خود Bale/شبکه (بدون متن پیام یا اطلاعات منبع)
+                STATS["last_fail"] = (type(exc).__name__ + ": " + re.sub(r"\d{6,}|https?://\S+", "?", str(exc))[:80])
                 state.add_fail(key, msg.id)
                 fails = state.fail_count(key, msg.id)
                 log.error("Forward failed source=%s (%d/%d): %s", tag, fails,
