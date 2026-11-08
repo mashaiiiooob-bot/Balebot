@@ -384,7 +384,7 @@ print("GATE OK")
 for k in list(os.environ):
     if k.endswith("_API_KEY") or k == "CLOUDFLARE_API_TOKEN": os.environ.pop(k)
 os.environ["CLOUDFLARE_API_TOKEN"] = "t"; os.environ["GROQ_API_KEY"] = "g"; os.environ["GEMINI_API_KEY"] = "m"
-assert [p.name for p in ai_mod.AI().providers] == ["gemini", "groq", "cloudflare"]
+assert [p.name for p in ai_mod.AI().providers] == ["groq", "gemini", "cloudflare"]
 for k in ("CLOUDFLARE_API_TOKEN", "GROQ_API_KEY", "GEMINI_API_KEY"): os.environ.pop(k)
 print("CLOUDFLARE ORDER OK")
 
@@ -407,4 +407,8 @@ for _ in range(3): pf._run("x")
 aiq = mk("failover", pf); perf = aiq.perf()["pp"]
 assert perf["calls"] == 3 and perf["err"] == 1 and perf["err_rate"] == 0.333 and perf["p50_ms"] is not None
 poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.AIC = None
+# رأی‌گیری با فقط یک سرویس: «تازه» معتبر، «تکراری» بدون تأیید دومی حذف نمی‌کند
+a1 = FP("va", [DUP]); aiv = mk("vote", a1); assert aiv.judge_duplicate("n", ["o"], s_) is None and aiv.stats["vote_single"] == 1
+a1 = FP("va2", [NEW]); aiv = mk("vote", a1); assert aiv.judge_duplicate("n", ["o"], s_) is False
+a1, b1 = FP("va3", [500]), FP("vb3", [DUP]); aiv = mk("vote", a1, b1); assert aiv.judge_duplicate("n", ["o"], s_) is None
 print("COMPARE OK")

@@ -263,9 +263,10 @@ class DeepSeek(OpenAICompat):
     prefer, fallback_model = ("deepseek-chat",), "deepseek-chat"
 
 
-ORDER = [(Gemini, "GEMINI_API_KEY"), (Groq, "GROQ_API_KEY"), (Cerebras, "CEREBRAS_API_KEY"),
-         (Mistral, "MISTRAL_API_KEY"), (OpenRouter, "OPENROUTER_API_KEY"), (DeepSeek, "DEEPSEEK_API_KEY")]
-ORDER.insert(2, (Cloudflare, "CLOUDFLARE_API_TOKEN"))
+# ترتیب بر اساس مقایسه‌ی واقعی: Groq سریع‌ترین و بدون رد اشتباه، سپس Gemini، سپس Cloudflare (کندتر، حساس‌تر)
+ORDER = [(Groq, "GROQ_API_KEY"), (Gemini, "GEMINI_API_KEY"), (Cloudflare, "CLOUDFLARE_API_TOKEN"),
+         (Cerebras, "CEREBRAS_API_KEY"), (Mistral, "MISTRAL_API_KEY"), (OpenRouter, "OPENROUTER_API_KEY"),
+         (DeepSeek, "DEEPSEEK_API_KEY")]
 
 
 class AI:
@@ -352,8 +353,12 @@ class AI:
             verdicts.append(v)
         if not verdicts:
             return None
-        if need == 2 and len(verdicts) == 2:
-            if verdicts[0] != verdicts[1]:
-                self._count("disagree")
-            return verdicts[0] and verdicts[1]
+        if need == 2:
+            if len(verdicts) == 2:
+                if verdicts[0] != verdicts[1]:
+                    self._count("disagree")
+                return verdicts[0] and verdicts[1]  # حذف فقط با توافق هر دو
+            # فقط یک سرویس در دسترس بود: «تازه» معتبر است، ولی «تکراری» بدون تأیید دومی حذف‌کننده نیست
+            self._count("vote_single")
+            return False if verdicts[0] is False else None
         return verdicts[0]
