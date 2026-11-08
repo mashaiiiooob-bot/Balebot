@@ -136,6 +136,10 @@ class OpenAICompat(Provider):
     def _generate(self, text):
         body = {"model": self.model, "temperature": 0, "max_tokens": 120,
                 "messages": [{"role": "user", "content": text}], "response_format": {"type": "json_object"}}
+        if re.search(r"gpt-oss|qwen3|deepseek-r1|reason", self.model or "", re.I):
+            body["max_tokens"] = 600
+            if "gpt-oss" in self.model:
+                body["reasoning_effort"] = "low"
         status, data = _post(f"{self.base}/chat/completions", body, {"Authorization": f"Bearer {self.key}"})
         if status == 400:  # بعضی مدل‌ها response_format را نمی‌پذیرند
             body.pop("response_format")
@@ -149,15 +153,20 @@ class OpenAICompat(Provider):
 
     def init(self):
         self.model = self.fallback_model
+        self.listed = []
         try:
             r = requests.get(f"{self.base}/models", headers={"Authorization": f"Bearer {self.key}"}, timeout=20)
             if r.status_code == 200:
                 ids = [m.get("id", "") for m in r.json().get("data", [])]
+                ids = [i for i in ids if i and not re.search(r"whisper|guard|safeguard|tts|embed|orpheus|moderation|prompt-guard", i, re.I)]
+                self.listed = ids[:8]
+                pick = None
                 for want in self.prefer:
-                    hit = [i for i in ids if want in i and not re.search(r"whisper|guard|tts|embed", i)]
+                    hit = sorted(i for i in ids if want in i)
                     if hit:
-                        self.model = sorted(hit)[0]
+                        pick = hit[0]
                         break
+                self.model = pick or (sorted(ids)[0] if ids else self.fallback_model)
         except Exception:
             pass
         super().init()
@@ -165,7 +174,7 @@ class OpenAICompat(Provider):
 
 class Groq(OpenAICompat):
     name, base, min_interval, default_limit = "groq", "https://api.groq.com/openai/v1", 3.0, 800
-    prefer, fallback_model = ("llama-3.3-70b-versatile", "llama-3.3-70b", "70b"), "llama-3.3-70b-versatile"
+    prefer, fallback_model = ("llama-3.3-70b", "gpt-oss-120b", "llama-4", "qwen", "gpt-oss-20b", "kimi", "llama-3.1"), "llama-3.3-70b-versatile"
 
 
 class Cerebras(OpenAICompat):
@@ -210,7 +219,9 @@ class AI:
 
     def info(self):
         return {"mode": self.mode, "strategy": self.strategy,
-                "providers": {p.name: {"model": p.model, "probe": p.probe} for p in self.providers + self.failed}}
+                "providers": {p.name: ({"model": p.model, "probe": p.probe} if p.ok else
+                                  {"model": p.model, "probe": p.probe, "listed": getattr(p, "listed", [])})
+                              for p in self.providers + self.failed}}
 
     def allow(self, state):
         """آیا حداقل یک سرویس آماده است؟ (در thread اصلی؛ کلیدهای بودجه‌ی state هم اینجا ساخته می‌شوند.)"""
