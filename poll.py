@@ -275,6 +275,42 @@ async def bench_task(text, positive, state):
         pass
 
 
+STATS_BASE = {}      # آمار جمع‌شده‌ی اجراهای قبلی (از state)
+SINCE = {"t": 0}
+
+
+def restore_metrics(state):
+    """آمار مقایسه بین اجراها (هر ~۵٫۵ ساعت) حفظ می‌شود: BENCH، توافق‌ها، تأخیرها و شمارنده‌ی سرویس‌ها."""
+    m = state.data.get("metrics") or {}
+    for k, v in (m.get("bench") or {}).items():
+        BENCH[k] = dict(v)
+    for k, v in (m.get("pair") or {}).items():
+        BENCH_PAIR[k] = list(v)
+    LAT_E2E.extend(m.get("e2e") or [])
+    STATS_BASE.update({k: v for k, v in (m.get("stats") or {}).items() if isinstance(v, int)})
+    SINCE["t"] = m.get("since") or time.time()
+    if AIC:
+        for p in AIC.providers + AIC.failed:
+            rec = (m.get("prov") or {}).get(p.name)
+            if rec:
+                p.calls, p.okc, p.errc = rec.get("calls", 0), rec.get("ok", 0), rec.get("err", 0)
+                p.lat.extend(rec.get("lat") or [])
+
+
+def snapshot_metrics(state):
+    tot = dict(STATS_BASE)
+    for k, v in STATS.items():
+        if isinstance(v, int):
+            tot[k] = tot.get(k, 0) + v
+    state.data["metrics"] = {
+        "since": SINCE["t"] or time.time(), "bench": BENCH, "pair": BENCH_PAIR, "e2e": list(LAT_E2E)[-300:], "stats": tot,
+        "prov": {p.name: {"calls": p.calls, "ok": p.okc, "err": p.errc, "lat": [round(x) for x in list(p.lat)[-100:]]}
+                 for p in ((AIC.providers + AIC.failed) if AIC else [])},
+    }
+    state.dirty = True
+    return tot
+
+
 def compare_report():
     lat = sorted(LAT_E2E)
     q = lambda f: round(lat[min(len(lat) - 1, int(len(lat) * f))] / 1000, 1) if lat else None
@@ -507,6 +543,7 @@ async def run():
         AIC = ai_mod.AI()
         await asyncio.to_thread(AIC.init)
         BASE_STATUS["ai"] = AIC.info()
+        restore_metrics(state)
         scrub = collect_names(entities)
         if settings.PROMO_LOOP == "on":
             promo_task = asyncio.create_task(promo_loop(bale, state, promo_stop, settings.BALE_DESTINATION,
@@ -528,7 +565,8 @@ async def run():
                 except Exception as exc:
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
-            write_status({**BASE_STATUS, "stats": dict(STATS), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
+            totals = snapshot_metrics(state)
+            write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)

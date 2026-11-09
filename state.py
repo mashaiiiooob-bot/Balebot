@@ -10,7 +10,7 @@ class State:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": []}
+        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": [], "metrics": {}}
         self.dirty = False
         if self.path.exists():
             try:
@@ -19,6 +19,9 @@ class State:
                     for name in ("checkpoints", "fails", "alerts"):
                         self.data[name].update(loaded.get(name, {}))
                     self.data["seen"] = list(loaded.get("seen", []))
+                    self.data["metrics"] = dict(loaded.get("metrics", {}))
+                    if "ai" in loaded:
+                        self.data["ai"] = loaded["ai"]
                 else:
                     self.dirty = True  # state قدیمی (با کلید هش‌ساده و peers) دور ریخته و بازنویسی می‌شود
             except (ValueError, OSError):

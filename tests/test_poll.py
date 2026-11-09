@@ -412,3 +412,22 @@ a1 = FP("va", [DUP]); aiv = mk("vote", a1); assert aiv.judge_duplicate("n", ["o"
 a1 = FP("va2", [NEW]); aiv = mk("vote", a1); assert aiv.judge_duplicate("n", ["o"], s_) is False
 a1, b1 = FP("va3", [500]), FP("vb3", [DUP]); aiv = mk("vote", a1, b1); assert aiv.judge_duplicate("n", ["o"], s_) is None
 print("COMPARE OK")
+
+# ================= آمار بین اجراها حفظ می‌شود =================
+import json as _j
+poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.LAT_E2E.clear(); poll.STATS_BASE.clear(); _reset()
+pp1, pp2 = PP(), PP(); pp1.name = "keep"; pp2.name = "keep"
+for _ in range(3): pp1._run("x")
+ai1 = mk("failover", pp1); poll.AIC = ai1
+poll.STATS.pop("last_fail", None)   # (در اجرای واقعی تا اولین شکست وجود ندارد)
+poll.bench_update({"keep": (True, False)}, True); poll.LAT_E2E.extend([1000, 2000]); poll.STATS["sent"] = 5
+stm = State(tempfile.mkdtemp() + "/m.json"); poll.snapshot_metrics(stm); stm.save()
+# «اجرای جدید»: همه چیز خالی، سپس از state بازیابی
+poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.LAT_E2E.clear(); _reset(); poll.STATS_BASE.clear()
+pp3 = PP(); pp3.name = "keep"; ai2 = mk("failover", pp3); poll.AIC = ai2
+poll.STATS.pop("last_fail", None); poll.restore_metrics(State(stm.path))
+assert poll.BENCH["keep"]["tp"] == 1 and list(poll.LAT_E2E) == [1000, 2000] and pp3.calls == 3 and pp3.errc == 1
+poll.STATS["sent"] = 2; poll.STATS["last_fail"] = "RuntimeError: x"   # مقدار متنی نباید جمع شود
+tot = poll.snapshot_metrics(State(stm.path)); assert tot["sent"] == 7 and "last_fail" not in tot   # ۵ قبلی + ۲ جدید
+poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.LAT_E2E.clear(); poll.STATS_BASE.clear(); poll.AIC = None; _reset()
+print("METRICS PERSIST OK")
