@@ -431,3 +431,49 @@ poll.STATS["sent"] = 2; poll.STATS["last_fail"] = "RuntimeError: x"   # مقدا
 tot = poll.snapshot_metrics(State(stm.path)); assert tot["sent"] == 7 and "last_fail" not in tot   # ۵ قبلی + ۲ جدید
 poll.BENCH.clear(); poll.BENCH_PAIR.clear(); poll.LAT_E2E.clear(); poll.STATS_BASE.clear(); poll.AIC = None; _reset()
 print("METRICS PERSIST OK")
+
+# ================= قطعی Bale: پیام رد نمی‌شود، بعد از وصل شدن همه ارسال می‌شوند =================
+from datetime import datetime, timedelta, timezone
+class DMsg(Msg):
+    def __init__(self, i, text, age_h=0): super().__init__(i, text); self.date = datetime.now(timezone.utc) - timedelta(hours=age_h)
+class DownBale(FakeBale):
+    def __init__(self, err): super().__init__(); self.err = err; self.calls = 0
+    def send_text(self, chat, text):
+        self.calls += 1
+        if self.err: raise RuntimeError(self.err)
+        self.sent.append(text)
+def _round(c, b, s):
+    poll.OUTAGE["until"] = 0.0     # بدون انتظار واقعی عقب‌نشینی
+    asyncio.run(poll.process_source(c, b, s, Ent(), tempfile.mkdtemp()))
+settings.DROP_WORDS[:] = []
+_reset(); poll.OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0, "diag_at": time.monotonic() + 9999})
+okey = poll.key_for(Ent())
+msgs = [DMsg(1, "قدیمی")]; so = State(tempfile.mkdtemp() + "/o.json"); c = FakeClient(msgs)
+bo = DownBale(None); _round(c, bo, so)                          # اولین اجرا: از اکنون
+msgs += [DMsg(2, "فوری: حادثه یک"), DMsg(3, "breaking news دو")]
+bo.err = "Bale HTTP 404 on sendMessage"
+for _ in range(12): _round(c, bo, so)                          # ۱۲ دور قطعی (بیش از MAX_FAILS=5)
+assert bo.sent == [] and so.last_id(okey) == 1, (bo.sent, so.last_id(okey))   # هیچ پیامی رد نشد
+assert poll.STATS["bale_outage"] >= 12 and poll.OUTAGE["since"] > 0 and poll.OUTAGE["step"] >= 1
+# عقب‌نشینی: تا وقتی زمان نرسیده، اصلاً تلاش نمی‌کند
+n = bo.calls; poll.OUTAGE["until"] = time.monotonic() + 100; asyncio.run(poll.process_source(c, bo, so, Ent(), tempfile.mkdtemp())); assert bo.calls == n
+# Bale برگشت: همه به ترتیب ارسال می‌شوند و وضعیت قطعی پاک می‌شود
+bo.err = None; _round(c, bo, so)
+assert len(bo.sent) == 2 and "یک" in bo.sent[0] and so.last_id(okey) == 3 and poll.OUTAGE["since"] == 0 and poll.OUTAGE["step"] == 0
+# پیام کهنه (قدیمی‌تر از سقف) بعد از قطعی طولانی ارسال نمی‌شود ولی checkpoint جلو می‌رود
+msgs += [DMsg(4, "خبر فوری کهنه", age_h=10), DMsg(5, "خبر فوری تازه")]
+_round(c, bo, so)
+assert len(bo.sent) == 3 and "تازه" in bo.sent[2] and so.last_id(okey) == 5 and poll.STATS["too_old"] == 1
+# خطای مخصوص خودِ پیام (غیر سراسری) مثل قبل بعد از MAX_FAILS رد می‌شود (پیام سمّی جلوی صف را نمی‌گیرد)
+msgs += [DMsg(6, "خبر فوری سمّی"), DMsg(7, "خبر فوری سالم")]
+bo.err = "Bale API rejected method: sendMessage"
+for _ in range(6): _round(c, bo, so)
+bo.err = None; _round(c, bo, so)
+assert so.last_id(okey) == 7 and bo.sent[-1].find("سالم") >= 0 and not any("سمّی" in t for t in bo.sent)
+# تشخیص: کد وضعیت بدون داده‌ی حساس
+class DB:
+    def get_me(self): raise RuntimeError("Bale HTTP 404 on getMe")
+    def get_chat(self, c): return {}
+assert poll.bale_diag(DB(), "@x") == {"getMe": "http_404", "getChat": "ok"}
+poll.OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0}); _reset()
+print("OUTAGE OK")

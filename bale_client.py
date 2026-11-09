@@ -51,6 +51,12 @@ class BaleClient:
             result = self._post("sendMessage", {"chat_id": chat_id, "text": chunk})
         return result
 
+    def get_me(self):
+        return self._post("getMe")
+
+    def get_chat(self, chat_id):
+        return self._post("getChat", {"chat_id": chat_id})
+
     def delete_message(self, chat_id, message_id):
         return self._post("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
 

@@ -39,9 +39,12 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
+# ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
+OUTAGE = {"until": 0.0, "step": 0, "since": 0.0, "diag_at": 0.0}
+SERVICE_ERR = re.compile(r"Bale HTTP (?:401|403|404|408|429|5\d\d)|Bale network error")
 # ---- مقایسه‌ی عوامل: قوانین (مرجع) در برابر هر سرویس هوش مصنوعی؛ فقط عدد، بدون متن ----
 BENCH = {}          # نام -> tp/fp/fn/tn/skipped/err
 BENCH_PAIR = {}     # "a|b" -> [موافق, کل]
@@ -325,6 +328,22 @@ def compare_report():
     return out
 
 
+def _http_code(exc):
+    m = re.search(r"HTTP (\d{3})", str(exc))
+    return f"http_{m.group(1)}" if m else type(exc).__name__
+
+
+def bale_diag(bale, chat):
+    """تشخیص علت: توکن (getMe) یا مقصد (getChat)؛ فقط کد وضعیت، بدون هیچ داده‌ی حساس."""
+    out = {}
+    for name, call in (("getMe", lambda: bale.get_me()), ("getChat", lambda: bale.get_chat(chat))):
+        try:
+            call(); out[name] = "ok"
+        except Exception as exc:
+            out[name] = _http_code(exc)
+    return out
+
+
 def classify(raw, text, state):
     """None = ارسال شود (همراه امضای محتوا)؛ وگرنه دلیلِ ارسال‌نشدن."""
     if not raw.strip():
@@ -350,6 +369,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
     tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
     names = [getattr(entity, "title", None), getattr(entity, "username", None), *scrub]
     last = state.last_id(key)
+    if time.monotonic() < OUTAGE["until"]:
+        return  # Bale در دسترس نیست؛ پیام‌ها در تلگرام می‌مانند و بعد از وصل شدن ارسال می‌شوند
 
     if last:
         messages = await fetch_new(client, entity, last)
@@ -368,7 +389,9 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         raw = msg.message or ""
         text = clean_message(raw, getattr(msg, "entities", None), names, settings.BLOCKLIST)
         STATS["seen"] += 1
-        reason, sig = classify(raw, text, state)
+        too_old = (getattr(msg, "date", None) is not None and settings.MAX_AGE_HOURS > 0 and
+                   (datetime.now(timezone.utc) - msg.date).total_seconds() > settings.MAX_AGE_HOURS * 3600)
+        reason, sig = ("too_old", None) if too_old else classify(raw, text, state)
         if reason in (None, "duplicate"):
             sig = sig or signature(text)
             reason = await apply_ai(reason, sig, text, state)
@@ -386,6 +409,9 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]
                 STATS["sent"] += 1
+                if OUTAGE["since"]:
+                    log.info("Bale is back after %d s", int(time.time() - OUTAGE["since"]))
+                OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0})
                 if getattr(msg, "date", None):
                     LAT_E2E.append((datetime.now(timezone.utc) - msg.date).total_seconds() * 1000)
                 log.info("Forwarded source=%s", tag)
@@ -397,10 +423,24 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 STATS["last_fail"] = (type(exc).__name__ + ": " + re.sub(r"\d{6,}|https?://\S+", "?", str(exc))[:80])
                 state.add_fail(key, msg.id)
                 fails = state.fail_count(key, msg.id)
+                if SERVICE_ERR.search(str(exc)):
+                    # خطای سراسری (توکن/مقصد/شبکه/سرور Bale): پیام را رد نکن؛ عقب‌نشینی نمایی و تلاش مجدد
+                    STATS["bale_outage"] += 1
+                    OUTAGE["since"] = OUTAGE["since"] or time.time()
+                    OUTAGE["step"] = min(OUTAGE["step"] + 1, 5)
+                    OUTAGE["until"] = time.monotonic() + min(30 * 2 ** (OUTAGE["step"] - 1), 300)
+                    log.error("Bale unavailable (%s); retry in %ds, message kept", _http_code(exc), int(OUTAGE["until"] - time.monotonic()))
+                    if time.monotonic() - OUTAGE["diag_at"] > 600:
+                        OUTAGE["diag_at"] = time.monotonic()
+                        BASE_STATUS["bale_diag"] = await asyncio.to_thread(bale_diag, bale, settings.BALE_DESTINATION)
+                    await alert(bale, state, "bale_down", f"Bale is unavailable ({_http_code(exc)}); messages are kept and will be retried.")
+                    state.save()
+                    if fails < settings.MAX_FAILS_SERVICE:
+                        return
                 log.error("Forward failed source=%s (%d/%d): %s", tag, fails,
                           settings.MAX_FAILS, type(exc).__name__)
                 state.save()
-                if fails < settings.MAX_FAILS:
+                if not SERVICE_ERR.search(str(exc)) and fails < settings.MAX_FAILS:
                     return  # checkpoint جلو نمی‌رود؛ دور بعد دوباره تلاش می‌شود
                 await alert(bale, state, "skipped",
                             f"a message was skipped after {settings.MAX_FAILS} failed sends (source {tag}).")
@@ -544,6 +584,7 @@ async def run():
         await asyncio.to_thread(AIC.init)
         BASE_STATUS["ai"] = AIC.info()
         restore_metrics(state)
+        BASE_STATUS["bale_diag"] = await asyncio.to_thread(bale_diag, bale, settings.BALE_DESTINATION)
         scrub = collect_names(entities)
         if settings.PROMO_LOOP == "on":
             promo_task = asyncio.create_task(promo_loop(bale, state, promo_stop, settings.BALE_DESTINATION,
@@ -566,7 +607,8 @@ async def run():
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
             totals = snapshot_metrics(state)
-            write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
+            write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
+                          "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)

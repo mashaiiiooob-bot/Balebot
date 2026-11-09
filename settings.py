@@ -38,6 +38,8 @@ PROMO_INTERVAL = max(20, int(_get("PROMO_INTERVAL", "60")))      # فاصله‌
 PROMO_VISIBLE = max(1, int(_get("PROMO_VISIBLE", "50")))         # مدت ماندن پیام قبل از حذف
 MAX_FILE_MB = 45
 MAX_FAILS = 5
+MAX_FAILS_SERVICE = 60      # خطای سراسری Bale (۴۰۴/۵xx/شبکه): پیام رد نمی‌شود مگر بعد از ~ساعت‌ها (سمّی بودن خودِ پیام)
+MAX_AGE_HOURS = int(_get("MAX_AGE_HOURS", "6"))   # پیام قدیمی‌تر از این بعد از قطعی ارسال نمی‌شود
 
 NEWS_KEYWORDS = [
     "خبر", "گزارش", "اعلام کرد", "اعلام شد", "فوری", "آخرین", "تحولات",
