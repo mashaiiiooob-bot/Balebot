@@ -333,6 +333,21 @@ def _http_code(exc):
     return f"http_{m.group(1)}" if m else type(exc).__name__
 
 
+def apply_reset(state):
+    """RESET_TOKEN جدید = «شروع تازه»: پیام‌های جامانده رد می‌شوند و هر منبع از «اکنون» ادامه می‌دهد (مثلاً بعد از عوض‌کردن کانال مقصد).
+    هر مقدار فقط یک بار اعمال می‌شود (در state ثبت می‌شود)، پس ریستارت‌های بعدی چیزی را پاک نمی‌کنند."""
+    tok = os.environ.get("RESET_TOKEN", "").strip()
+    if not tok or state.data.get("reset_token") == tok:
+        return False
+    state.data["checkpoints"].clear()
+    state.data["fails"].clear()
+    state.data["reset_token"] = tok
+    state.dirty = True
+    state.save()
+    log.info("Fresh start requested: backlog skipped, every source continues from now")
+    return True
+
+
 def bale_diag(bale, chat):
     """تشخیص علت: توکن (getMe) یا مقصد (getChat)؛ فقط کد وضعیت، بدون هیچ داده‌ی حساس."""
     out = {}
@@ -583,6 +598,7 @@ async def run():
         AIC = ai_mod.AI()
         await asyncio.to_thread(AIC.init)
         BASE_STATUS["ai"] = AIC.info()
+        apply_reset(state)
         restore_metrics(state)
         BASE_STATUS["bale_diag"] = await asyncio.to_thread(bale_diag, bale, settings.BALE_DESTINATION)
         scrub = collect_names(entities)

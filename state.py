@@ -10,7 +10,7 @@ class State:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": [], "metrics": {}}
+        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": [], "metrics": {}, "reset_token": ""}
         self.dirty = False
         if self.path.exists():
             try:
@@ -20,6 +20,7 @@ class State:
                         self.data[name].update(loaded.get(name, {}))
                     self.data["seen"] = list(loaded.get("seen", []))
                     self.data["metrics"] = dict(loaded.get("metrics", {}))
+                    self.data["reset_token"] = loaded.get("reset_token", "")
                     if "ai" in loaded:
                         self.data["ai"] = loaded["ai"]
                 else:

@@ -477,3 +477,15 @@ class DB:
 assert poll.bale_diag(DB(), "@x") == {"getMe": "http_404", "getChat": "ok"}
 poll.OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0}); _reset()
 print("OUTAGE OK")
+
+# ================= «شروع تازه» با RESET_TOKEN =================
+rs = State(tempfile.mkdtemp() + "/r.json"); rs.data["checkpoints"] = {"a": 5, "b": 9}; rs.data["fails"] = {"a:3": 2}; rs.dirty = True; rs.save()
+os.environ.pop("RESET_TOKEN", None); assert poll.apply_reset(rs) is False and rs.data["checkpoints"] == {"a": 5, "b": 9}   # بدون توکن: هیچ
+os.environ["RESET_TOKEN"] = "t1"
+assert poll.apply_reset(rs) is True and rs.data["checkpoints"] == {} and rs.data["fails"] == {}
+rs2 = State(rs.path); assert rs2.data["reset_token"] == "t1"
+rs2.data["checkpoints"]["a"] = 50; rs2.dirty = True
+assert poll.apply_reset(rs2) is False and rs2.data["checkpoints"] == {"a": 50}        # همان توکن دوباره: چیزی پاک نمی‌شود
+os.environ["RESET_TOKEN"] = "t2"; assert poll.apply_reset(rs2) is True and rs2.data["checkpoints"] == {}   # توکن جدید: دوباره
+os.environ.pop("RESET_TOKEN")
+print("RESET OK")

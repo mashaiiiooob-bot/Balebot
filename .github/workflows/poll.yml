@@ -84,6 +84,7 @@ jobs:
           DROP_WORDS_EXTRA: ${{ secrets.DROP_WORDS_EXTRA }}
           BLOCKLIST_EXTRA: ${{ secrets.BLOCKLIST_EXTRA }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
+          RESET_TOKEN: ${{ vars.RESET_TOKEN }}
           SIGNATURE: ${{ vars.SIGNATURE }}
           LOOP_SECONDS: ${{ vars.LOOP_SECONDS }}
           POLL_INTERVAL: ${{ vars.POLL_INTERVAL }}
