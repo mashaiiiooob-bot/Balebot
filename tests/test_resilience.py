@@ -167,3 +167,38 @@ assert relay.check_health() == 0                                                
 bale.fail = RuntimeError("Bale network error on sendMessage: x"); clk.adv(4000); ob.enqueue("r2", {"type": "text", "text": "y"})
 assert relay.check_health() == 0 and ob.stats()["pending"] == 1                       # بله قطع: هشدار ارسال نمی‌شود اما چیزی گم نمی‌شود
 print("ALL RESILIENCE OK")
+
+# ---------------- BaleClient: جزئیات خطای رسمی (error_code / parameters.retry_after) ----------------
+import requests as _rq
+from bale_client import BaleClient, BaleError
+class _Resp:
+    def __init__(self, code, body=None, bad_json=False): self.status_code = code; self._b = body; self._bad = bad_json
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            e = _rq.HTTPError("http://secret-url/botTOKEN/x"); e.response = self; raise e
+    def json(self):
+        if self._bad: raise ValueError("no json")
+        return self._b
+class _Sess:
+    def __init__(self, r): self.r = r
+    def post(self, *a, **k): return self.r
+def _client(r):
+    c = BaleClient("TOKEN123"); c.session = _Sess(r); return c
+try: _client(_Resp(429, {"ok": False, "error_code": 429, "description": "Too Many Requests", "parameters": {"retry_after": 7}}))._post("sendMessage")
+except BaleError as e:
+    assert e.retry_after == 7 and e.error_code == 429 and e.status == 429 and str(e) == "Bale HTTP 429 on sendMessage" and "TOKEN123" not in str(e)
+    assert isinstance(e, RuntimeError) and classify(e) == (False, 30, "http_429")                       # حداقل ۳۰ و نه کمتر از پیشنهاد سرور
+else: raise AssertionError
+try: _client(_Resp(429, {"ok": False, "parameters": {"retry_after": 120}}))._post("x")
+except BaleError as e: assert classify(e) == (False, 120, "http_429")                                       # پیشنهاد سرور بزرگ‌تر → همان
+try: _client(_Resp(500, bad_json=True))._post("x")
+except BaleError as e: assert e.retry_after == 0 and e.error_code is None and str(e) == "Bale HTTP 500 on x"
+try: _client(_Resp(200, {"ok": False, "error_code": 400, "parameters": {"retry_after": "x"}}))._post("x")
+except BaleError as e: assert e.error_code == 400 and e.retry_after == 0 and "rejected" in str(e)
+assert _client(_Resp(200, {"ok": True, "result": [1]}))._post("getUpdates") == [1]
+# retry_after واقعی تا backoff صف منتقل می‌شود
+ob, clk, d = mk(); ob.enqueue("rt", {"type": "text", "text": "q"}); bale = FakeBale()
+bale.fail = BaleError("Bale HTTP 429 on sendMessage", status=429, retry_after=300)
+dl = Deliverer(ob, bale, "@d", Breaker(clock=clk), sleep=lambda s: None, clock=clk); dl.run_once()
+clk.adv(299); assert ob.claim(1) == []; clk.adv(2); assert len(ob.claim(1)) == 1
+print("BALE ERROR DETAILS OK")

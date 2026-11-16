@@ -9,19 +9,20 @@ def classify(exc):
     """→ (permanent, retry_after_s, label). خطای ۴۰۰ = محتوای نامعتبر (دائمی)؛ ۴۰۱/۴۰۳/۴۰۴ = مشکل توکن/دسترسی
     (موقت با backoff بلند تا با اصلاح تنظیمات تحویل ادامه یابد)؛ ۴۲۹/۵xx/شبکه = موقت."""
     msg = str(exc)
+    hinted = int(getattr(exc, "retry_after", 0) or 0)      # parameters.retry_after از پاسخ رسمی بله
     m = _HTTP.search(msg)
     if m:
         code = int(m.group(1))
         if code == 400:
             return True, 0, "http_400"
         if code in (401, 403, 404):
-            return False, 300, f"http_{code}"
+            return False, max(300, hinted), f"http_{code}"
         if code == 429:
-            return False, 30, "http_429"
-        return False, 0, f"http_{code}"
+            return False, max(30, hinted), "http_429"
+        return False, hinted, f"http_{code}"
     if "network error" in msg or "invalid JSON" in msg:
         return False, 0, "network"
-    return False, 0, "other"
+    return False, hinted, "other"
 
 
 class Breaker:

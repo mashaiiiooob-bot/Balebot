@@ -21,6 +21,31 @@ def split_text(text: str, limit: int = TEXT_LIMIT):
     return chunks
 
 
+class BaleError(RuntimeError):
+    """خطای API بله. هنوز RuntimeError است و متن پیام همان قبلی است؛ فقط جزئیات ساخت‌یافته (طبق مستندات رسمی:
+    error_code و parameters.retry_after) هم دارد. متن/توضیح پاسخ عمداً در پیام نمی‌آید."""
+
+    def __init__(self, message, status=None, error_code=None, retry_after=0):
+        super().__init__(message)
+        self.status, self.error_code, self.retry_after = status, error_code, retry_after
+
+
+def _retry_after(params):
+    try:
+        return max(0, int((params or {}).get("retry_after", 0)))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
+def _error_details(resp):
+    """(retry_after, error_code) از بدنه‌ی JSON خطا؛ اگر بدنه JSON نبود (0, None)."""
+    try:
+        body = resp.json()
+        return _retry_after(body.get("parameters")), body.get("error_code")
+    except Exception:       # noqa: BLE001
+        return 0, None
+
+
 class BaleClient:
     def __init__(self, token: str):
         self.base = f"https://tapi.bale.ai/bot{token}/"
@@ -35,14 +60,17 @@ class BaleClient:
             payload = response.json()
         except requests.HTTPError as exc:
             # پیام خطای requests شامل URL (و توکن) است؛ آن را چاپ نمی‌کنیم.
-            status = exc.response.status_code if exc.response is not None else "?"
-            raise RuntimeError(f"Bale HTTP {status} on {method}") from None
+            resp = exc.response
+            status = resp.status_code if resp is not None else "?"
+            retry_after, code = _error_details(resp)
+            raise BaleError(f"Bale HTTP {status} on {method}", status=status, error_code=code, retry_after=retry_after) from None
         except requests.RequestException as exc:
-            raise RuntimeError(f"Bale network error on {method}: {type(exc).__name__}") from None
+            raise BaleError(f"Bale network error on {method}: {type(exc).__name__}") from None
         except ValueError:
-            raise RuntimeError(f"Bale invalid JSON on {method}") from None
+            raise BaleError(f"Bale invalid JSON on {method}") from None
         if not payload.get("ok"):
-            raise RuntimeError(f"Bale API rejected method: {method}")
+            retry_after = _retry_after(payload.get("parameters"))
+            raise BaleError(f"Bale API rejected method: {method}", error_code=payload.get("error_code"), retry_after=retry_after)
         return payload.get("result")
 
     def send_text(self, chat_id, text):
