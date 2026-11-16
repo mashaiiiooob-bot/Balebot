@@ -1,0 +1,40 @@
+name: Bale destination diagnostics (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      extra_chats:
+        description: "نام‌های اضافه برای بررسی، با ویرگول (مثلاً @name)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: balebot-diag      # جدا از گروه اصلی؛ ربات زنده را مسدود نمی‌کند
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Read-only Bale checks
+        run: python tools/diag_bale.py
+        env:
+          BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
+          BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
+          DIAG_CHATS: ${{ github.event.inputs.extra_chats }}
+      - name: Publish result (codes only) to branch diag
+        run: |
+          cd diag_out
+          git init -q && git checkout -q -b diag
+          git config user.name "balebot-diag" && git config user.email "balebot-diag@users.noreply.github.com"
+          git add diag.json && git commit -q -m "diag"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag
