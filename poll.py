@@ -32,6 +32,7 @@ from dedupe import signature, is_duplicate
 import ai as ai_mod
 from promo import promo_loop
 from state import State
+from telegram_out import FanoutBale, TelegramLane
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
@@ -568,6 +569,12 @@ async def run():
     )
     bale = BaleClient(os.environ["BALE_BOT_TOKEN"].strip())
     state = State(settings.STATE_FILE)
+    tg_lane = TelegramLane.from_env(state)       # مسیر دوم: ربات تلگرام → کانال تلگرام (اگر تنظیم شده باشد)
+    tg_task = None
+    if tg_lane:
+        bale = FanoutBale(bale, tg_lane, settings.BALE_DESTINATION, settings.SIGNATURE, os.environ.get("TG_SIGNATURE", ""))
+        tg_task = asyncio.create_task(tg_lane.run())
+        log.info("Telegram lane enabled")
     tmpdir = tempfile.mkdtemp(prefix="balebot_")
     deadline = time.monotonic() + settings.LOOP_SECONDS
 
@@ -623,6 +630,8 @@ async def run():
                     log.error("Source %s failed: %s", key_for(entity)[:6], type(exc).__name__)
             state.save()
             totals = snapshot_metrics(state)
+            if tg_lane:
+                BASE_STATUS["tg"] = tg_lane.status()
             write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
                           "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
@@ -643,6 +652,16 @@ async def run():
                 await asyncio.wait_for(promo_task, timeout=20)  # پیامِ در حال نمایش پاک شود
         except Exception:
             pass
+        if tg_lane:                              # صف تلگرام تا ۳۰ ثانیه فرصت می‌گیرد خالی شود؛ سپس tg_seen ذخیره می‌شود
+            try:
+                for _ in range(30):
+                    if not tg_lane.status()["queued"]:
+                        break
+                    await asyncio.sleep(1)
+                tg_lane.stop()
+                await asyncio.wait_for(tg_task, timeout=10)
+            except Exception:
+                pass
         state.save()
         await client.disconnect()
         shutil.rmtree(tmpdir, ignore_errors=True)
