@@ -1,0 +1,9 @@
+{
+ "bot_is_bot": true,
+ "bot_status": "administrator",
+ "can_post_messages": true,
+ "chat_type": "channel",
+ "configured": true,
+ "getChat": "ok",
+ "getMe": "ok"
+}

@@ -1,0 +1,17 @@
+{
+ "bot_is_bot": true,
+ "chats": {
+  "<destination>": {
+   "bot_status": "administrator",
+   "can_edit_messages": true,
+   "can_post_messages": true,
+   "getChat": "ok",
+   "has_username": true,
+   "type": "channel"
+  },
+  "maklpo": {
+   "getChat": "http_400"
+  }
+ },
+ "getMe": "ok"
+}
