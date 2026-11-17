@@ -31,10 +31,15 @@ jobs:
           BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
           BALE_DESTINATION: ${{ vars.BALE_DESTINATION }}
           DIAG_CHATS: ${{ github.event.inputs.extra_chats }}
+      - name: Read-only Telegram bot checks
+        run: python tools/diag_tg.py
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_DESTINATION: ${{ vars.TG_DESTINATION }}
       - name: Publish result (codes only) to branch diag
         run: |
           cd diag_out
           git init -q && git checkout -q -b diag
           git config user.name "balebot-diag" && git config user.email "balebot-diag@users.noreply.github.com"
-          git add diag.json && git commit -q -m "diag"
+          git add -A && git commit -q -m "diag"
           git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag
