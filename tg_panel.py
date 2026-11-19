@@ -214,6 +214,13 @@ def render_hours(s, days):
     return text, [period_row("hr", days or 0), nav_row()]
 
 
+SERIES_FA = {"joined": "عضو شدند", "left": "ترک کردند", "views": "بازدید", "shares": "اشتراک‌گذاری"}
+
+
+def _fa(name):
+    return SERIES_FA.get(str(name).strip().lower(), esc(name))
+
+
 def render_admin(adm, growth, subs):
     lines = ["<b>📈 آمار پیشرفته‌ی تلگرام</b>"]
     if adm and adm.get("available"):
@@ -221,6 +228,17 @@ def render_admin(adm, growth, subs):
             return f"{lbl}: <b>{n(v['current'])}</b> (دوره‌ی قبل {n(v['previous'])})" if v else f"{lbl}: —"
         lines += [line("مشترکین", adm["followers"]), line("بازدید در هر پست", adm["views_per_post"]), line("اشتراک‌گذاری در هر پست", adm["shares_per_post"]),
                   line("ری‌اکشن در هر پست", adm["reactions_per_post"]), f"اعلان فعال: {adm['notifications_pct'] if adm['notifications_pct'] is not None else '—'}٪"]
+        der = adm.get("derived") or {}
+        if der.get("growth"):
+            g = der["growth"]
+            lines.append(f"\n<b>رشد ({g['days']} روز)</b>\n{n(g['first'])} ← {n(g['last'])}  ({sgn(g['delta'])})")
+        if der.get("joined_left"):
+            lines.append("<b>عضویت و ترک</b>\n" + " | ".join(f"{_fa(k)}: {n(v)}" for k, v in der["joined_left"].items()))
+        for key, title in (("views_by_source", "منبع بازدید"), ("new_followers_by_source", "منبع مشترکین جدید"), ("languages", "زبان مشترکین")):
+            if der.get(key):
+                lines.append(f"<b>{title}</b>\n" + " | ".join(f"{esc(k)}: {n(v)}" for k, v in der[key]))
+        if adm.get("graphs_err"):
+            lines.append(f"\n(نمودارهای ناموفق: {len(adm['graphs_err'])})")
     else:
         reason = (adm or {}).get("reason", "نامشخص")
         lines += [f"در دسترس نیست ({esc(reason)}).", "برای این آمار، حساب کاربری باید در کانال <b>ادمین با دسترسی مشاهده‌ی آمار</b> باشد و کانال به تعداد حداقلی مشترک رسیده باشد."]
@@ -500,7 +518,15 @@ class Panel:
         return {"enabled": True, "admins": len(self.admins), "polls": self.counters["polls"], "updates": self.counters["updates"],
                 "errors": self.counters["errors"] + self.counters["collect_errors"], "unauthorized": self.counters["unauthorized"],
                 "last_error": self.last_error, "channel_check": self.summary,
-                "admin_stats": (None if not self._admin_cache else (True if self._admin_cache[1].get("available") else self._admin_cache[1].get("reason")))}
+                "admin_stats": (None if not self._admin_cache else (True if self._admin_cache[1].get("available") else self._admin_cache[1].get("reason"))),
+                "admin_summary": self._admin_summary()}
+
+    def _admin_summary(self):
+        a = self._admin_cache[1] if self._admin_cache else None
+        if not a or not a.get("available"):
+            return None
+        return {"dc": a.get("dc"), "followers": (a.get("followers") or {}).get("current"), "graphs_ok": a.get("graphs_ok"), "graphs_err": a.get("graphs_err"),
+                "derived_keys": sorted((a.get("derived") or {}).keys())}
 
 
 async def _admin_via_entity(client, channel):

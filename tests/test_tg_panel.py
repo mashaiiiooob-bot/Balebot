@@ -55,6 +55,49 @@ st = NS(period=NS(min_date=datetime.datetime.fromtimestamp(NOW - 86400 * 7, date
         followers=NS(current=1500, previous=1450), views_per_post=NS(current=200, previous=180), shares_per_post=NS(current=3, previous=2),
         reactions_per_post=NS(current=5, previous=4), enabled_notifications=NS(part=300, total=1500))
 adm = run(tg_stats.collect_admin(FakeClient(msgs, stats=st), NS())); assert adm["available"] and adm["followers"] == {"current": 1500, "previous": 1450} and adm["notifications_pct"] == 20.0
+
+# ---- آمار پیشرفته: مهاجرت مرکز داده + نمودارها ----
+import json as _json
+class StatsMigrateError(Exception):
+    def __init__(self, dc): self.dc = dc
+class StatsGraph:
+    def __init__(self, data): self.json = NS(data=_json.dumps(data))
+class StatsGraphAsync:
+    def __init__(self, token): self.token = token
+def stats_obj(**graphs):
+    return NS(period=NS(min_date=datetime.datetime.fromtimestamp(NOW - 86400 * 28, datetime.timezone.utc), max_date=datetime.datetime.fromtimestamp(NOW, datetime.timezone.utc)),
+              followers=NS(current=104, previous=98), views_per_post=NS(current=210, previous=190), shares_per_post=NS(current=2, previous=3),
+              reactions_per_post=NS(current=4, previous=4), enabled_notifications=NS(part=26, total=104), **graphs)
+G_GROWTH = {"columns": [["x", 1, 2, 3, 4], ["y0", 90, 95, 99, 104]], "names": {"y0": "Total followers"}}
+G_FOL = {"columns": [["x", 1, 2, 3], ["y0", 5, 3, 4], ["y1", 1, None, 2]], "names": {"y0": "Joined", "y1": "Left"}}
+G_SRC = {"columns": [["x", 1, 2], ["y0", 100, 50], ["y1", 20, 5], ["y2", 0, 0]], "names": {"y0": "URL", "y1": "Search", "y2": "Other"}}
+class MigClient:
+    """اولین درخواست StatsMigrateError می‌دهد؛ بقیه فقط روی مرکز داده‌ی ۴ (sender صادرشده) جواب می‌گیرند."""
+    def __init__(self, graph_async=True, bad_graph=False): self.log, self.ga, self.bad = [], graph_async, bad_graph
+    async def __call__(self, req):
+        n_ = type(req).__name__; self.log.append(("direct", n_))
+        if n_ == "GetBroadcastStatsRequest": raise StatsMigrateError(4)
+        raise AssertionError("graph loads must use the stats DC")
+    async def _borrow_exported_sender(self, dc): self.log.append(("borrow", dc)); return NS(dc=dc)
+    async def _return_exported_sender(self, s): self.log.append(("return", s.dc))
+    async def _call(self, sender, req):
+        n_ = type(req).__name__; self.log.append((f"dc{sender.dc}", n_))
+        if n_ == "GetBroadcastStatsRequest":
+            return stats_obj(growth_graph=StatsGraphAsync("t1") if self.ga else StatsGraph(G_GROWTH), followers_graph=StatsGraph(G_FOL),
+                             views_by_source_graph=StatsGraph(G_SRC), languages_graph=StatsGraph({"columns": []}) if not self.bad else StatsGraphAsync("bad"))
+        if n_ == "LoadAsyncGraphRequest":
+            if req.token == "bad": return NS(error="x")        # StatsGraphError → نباید کل آمار را خراب کند
+            return StatsGraph(G_GROWTH)
+FN = NS(stats=NS(GetBroadcastStatsRequest=type("GetBroadcastStatsRequest", (), {"__init__": lambda self, channel: None}),
+                 LoadAsyncGraphRequest=type("LoadAsyncGraphRequest", (), {"__init__": lambda self, token, x=None: setattr(self, "token", token)})))
+mc = MigClient(); adm = run(tg_stats.collect_admin(mc, NS(), FN))
+assert adm["available"] and adm["dc"] == 4 and adm["followers"] == {"current": 104, "previous": 98} and adm["notifications_pct"] == 25.0
+assert ("borrow", 4) in mc.log and ("return", 4) in mc.log and ("dc4", "LoadAsyncGraphRequest") in mc.log and ("direct", "LoadAsyncGraphRequest") not in mc.log
+der = adm["derived"]; assert der["growth"] == {"first": 90, "last": 104, "days": 4, "delta": 14}
+assert der["joined_left"] == {"Joined": 12, "Left": 3} and der["views_by_source"] == [("URL", 150), ("Search", 25)]      # منبع صفر حذف شد
+assert adm["graphs"] == {} and "growth_graph" in adm["graphs_ok"] and adm["graphs_err"] == []
+bad = run(tg_stats.collect_admin(MigClient(bad_graph=True), NS(), FN)); assert bad["available"] and any(e.startswith("languages_graph") for e in bad["graphs_err"]) and "growth" in bad["derived"]
+print("admin stats OK")
 print("collect OK")
 
 # ---------------- summarize ----------------
@@ -126,6 +169,7 @@ PROJ = {"totals": {"seen": 1000, "sent": 100, "ad": 50, "dropword": 20, "profani
         "ai_providers": [{"name": "groq", "ok": True}, {"name": "deepseek", "ok": False}]}
 async def collector(client, channel, limit, admin): return {"channel": {"title": "<کانال> & من", "username": "bale_dr", "subs": 1500}, "posts": posts, "admin": None}
 async def admin_c(client, channel): return {"available": False, "reason": "ChatAdminRequiredError"}
+async def admin_ok(client, channel): return adm
 def mkpanel(admins=(111,), **kw):
     st = mkstate(); fb = FakeBot(); clk = [NOW]
     pn = Panel(fb, admins, st, None, "@bale_dr", lambda: dict(PROJ, paused=bool(st.data.get("paused"))), collector=collector, admin_collector=admin_c, clock=lambda: clk[0], **kw)
@@ -151,6 +195,9 @@ text, _ = run(pn.page("hl")); assert "groq ✅" in text and "deepseek ❌" in te
 evil = [dict(posts[0], id=99, text="<b>x</b><a href=1>y</a>", views=10**6)]
 async def evil_c(c, ch, l, a): return {"channel": {"title": "t", "username": "u", "subs": 1}, "posts": evil, "admin": None}
 pe = mkpanel(); pe.collector = evil_c; t, _ = run(pe.page("top:7:v")); assert "&lt;b&gt;x&lt;/b&gt;" in t and "<a href=1>" not in t
+pa = mkpanel(); pa.admin_collector = admin_ok
+text, _ = run(pa.page("adm")); assert "104" in text and "عضو شدند: 12" in text and "ترک کردند: 3" in text and "URL: 150" in text and "+14" in text and len(text) < 4096
+sm = pa.status()["admin_summary"]; assert sm["dc"] == 4 and sm["followers"] == 104 and "growth" in sm["derived_keys"] and pa.status()["admin_stats"] is True
 # ---- دسترسی
 pn = mkpanel((111,))
 run(pn.handle(umsg(1, "/start", fid=999))); assert pn.fb.sent == [] and pn.counters["unauthorized"] == 1            # غیرمدیر: بی‌پاسخ

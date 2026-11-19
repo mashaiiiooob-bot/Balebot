@@ -3,6 +3,7 @@
 نکته: Bot API بازدید/ری‌اکشن پست‌های کانال را نمی‌دهد؛ این داده‌ها فقط با حساب کاربری (MTProto) خوانده می‌شوند.
 آمار پیشرفته‌ی تلگرام (رشد، اعلان‌ها، ...) فقط اگر حساب در کانال «ادمین با دسترسی آمار» باشد در دسترس است.
 """
+import json
 import statistics
 import time
 
@@ -71,25 +72,97 @@ async def collect(client, channel, limit=500, admin=True):
     return out
 
 
+async def _call_on_dc(client, dc, request):
+    """درخواست را روی مرکز داده‌ی دیگر اجرا می‌کند (همان روش دانلود فایل در Telethon)."""
+    sender = await client._borrow_exported_sender(dc)
+    try:
+        return await client._call(sender, request)
+    finally:
+        await client._return_exported_sender(sender)
+
+
+def parse_graph(raw):
+    """JSON نمودار تلگرام → {"x": [...], "series": {نام: [مقادیر]}}."""
+    d = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    cols = {c[0]: c[1:] for c in d.get("columns", []) if c}
+    names = d.get("names") or {}
+    return {"x": cols.get("x", []), "series": {names.get(k, k): v for k, v in cols.items() if k != "x"}}
+
+
+def _sum(vals):
+    return sum(v for v in vals if isinstance(v, (int, float)))
+
+
+GRAPHS = ("growth_graph", "followers_graph", "views_by_source_graph", "new_followers_by_source_graph", "languages_graph")
+
+
 async def collect_admin(client, ent, functions=None):
-    """آمار پیشرفته‌ی تلگرام؛ اگر در دسترس نباشد {available: False, reason}."""
+    """آمار پیشرفته‌ی تلگرام؛ اگر در دسترس نباشد {available: False, reason}. اگر آمار روی مرکز داده‌ی دیگری باشد
+    (StatsMigrateError) درخواست‌ها همان‌جا تکرار می‌شوند."""
     try:
         if functions is None:
             from telethon.tl import functions
-        st = await client(functions.stats.GetBroadcastStatsRequest(channel=ent))
-    except Exception as exc:                          # noqa: BLE001
+        req = functions.stats.GetBroadcastStatsRequest(channel=ent)
+        dc = None
+        try:
+            st = await client(req)
+        except Exception as exc:                          # noqa: BLE001
+            if type(exc).__name__ != "StatsMigrateError":
+                raise
+            dc = getattr(exc, "dc", None) or getattr(exc, "new_dc", None)
+            st = await _call_on_dc(client, dc, req)
+    except Exception as exc:                              # noqa: BLE001
         return {"available": False, "reason": type(exc).__name__}
 
     def val(x):
         return {"current": getattr(x, "current", None), "previous": getattr(x, "previous", None)} if x is not None else None
     notif = getattr(st, "enabled_notifications", None)
     period = getattr(st, "period", None)
-    return {"available": True,
-            "period": [int(period.min_date.timestamp()), int(period.max_date.timestamp())] if period else None,
-            "followers": val(getattr(st, "followers", None)), "views_per_post": val(getattr(st, "views_per_post", None)),
-            "shares_per_post": val(getattr(st, "shares_per_post", None)),
-            "reactions_per_post": val(getattr(st, "reactions_per_post", None)),
-            "notifications_pct": round(100 * notif.part / notif.total, 1) if notif and getattr(notif, "total", 0) else None}
+    out = {"available": True, "dc": dc,
+           "period": [int(period.min_date.timestamp()), int(period.max_date.timestamp())] if period else None,
+           "followers": val(getattr(st, "followers", None)), "views_per_post": val(getattr(st, "views_per_post", None)),
+           "shares_per_post": val(getattr(st, "shares_per_post", None)),
+           "reactions_per_post": val(getattr(st, "reactions_per_post", None)),
+           "notifications_pct": round(100 * notif.part / notif.total, 1) if notif and getattr(notif, "total", 0) else None,
+           "graphs": {}, "graphs_ok": [], "graphs_err": []}
+    for name in GRAPHS:
+        g = getattr(st, name, None)
+        if g is None:
+            continue
+        try:
+            kind = type(g).__name__
+            if kind == "StatsGraphAsync":
+                req2 = functions.stats.LoadAsyncGraphRequest(token=g.token)
+                g = await (_call_on_dc(client, dc, req2) if dc else client(req2))
+                kind = type(g).__name__
+            if kind != "StatsGraph":
+                raise ValueError(kind)
+            out["graphs"][name] = parse_graph(g.json.data)
+            out["graphs_ok"].append(name)
+        except Exception as exc:                          # noqa: BLE001
+            out["graphs_err"].append(f"{name}:{type(exc).__name__}")
+    out["derived"] = derive_graphs(out["graphs"])
+    out["graphs"] = {}          # نمودار خام نگه داشته نمی‌شود؛ فقط خلاصه‌ی محاسبه‌شده
+    return out
+
+
+def derive_graphs(graphs):
+    """خلاصه‌های ساده از نمودارها (رشد، عضویت/ترک، منبع ترافیک، زبان)."""
+    d = {}
+    g = graphs.get("growth_graph")
+    if g and g["series"]:
+        ys = [v for v in next(iter(g["series"].values())) if isinstance(v, (int, float))]
+        if ys:
+            d["growth"] = {"first": ys[0], "last": ys[-1], "days": len(ys), "delta": ys[-1] - ys[0]}
+    f = graphs.get("followers_graph")
+    if f and f["series"]:
+        d["joined_left"] = {k: _sum(v) for k, v in f["series"].items()}
+    for key, name in (("views_by_source_graph", "views_by_source"), ("new_followers_by_source_graph", "new_followers_by_source"), ("languages_graph", "languages")):
+        gg = graphs.get(key)
+        if gg and gg["series"]:
+            rows = sorted(((k, _sum(v)) for k, v in gg["series"].items()), key=lambda r: -r[1])
+            d[name] = [r for r in rows if r[1] > 0][:6]
+    return d
 
 
 # ------------------------------------------------------------------ محاسبه‌ی خالص
