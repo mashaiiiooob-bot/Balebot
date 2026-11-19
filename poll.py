@@ -128,12 +128,12 @@ def sanitize_media(path, kind):
     return neutral
 
 
-async def forward(bale, message, text, tmpdir):
+async def forward(bale, message, text, tmpdir, text_only=False):
     caption = build_caption(text)
     media_path = None
     try:
         size = getattr(message.file, "size", 0) or 0
-        if message.media and size <= settings.MAX_FILE_MB * 1024 * 1024:
+        if message.media and not text_only and size <= settings.MAX_FILE_MB * 1024 * 1024:
             media_path = await message.download_media(file=tmpdir)
             if media_path:
                 media_path = await asyncio.to_thread(sanitize_media, media_path, media_kind(message))
@@ -397,6 +397,8 @@ def project_snapshot(state, n_sources, n_failed, tg_lane):
 async def process_source(client, bale, state, entity, tmpdir, scrub=()):
     if state.data.get("paused"):       # توقف ارسال از پنل تلگرام؛ checkpoint جلو نمی‌رود (پس از ادامه، پیام‌های مجاز ارسال می‌شوند)
         return
+    own = [getattr(entity, "username", None)] + [getattr(u, "username", None) for u in (getattr(entity, "usernames", None) or [])]
+    text_only = any(settings.confuse(u) in settings.get_text_only() for u in own if u)
     key = key_for(entity)
     tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
     names = [getattr(entity, "title", None), getattr(entity, "username", None), *scrub]
@@ -436,7 +438,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
             STATS[reason] += 1
         else:
             try:
-                await forward(bale, msg, text, tmpdir)
+                await forward(bale, msg, text, tmpdir, text_only)
                 state.add_seen(sig, time.time())
                 RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]

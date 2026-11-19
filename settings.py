@@ -86,6 +86,11 @@ def confuse(text):
     return re.sub(r"\s+", " ", t).strip()
 
 
+def get_text_only():
+    """منبع‌هایی که فقط متنشان ارسال می‌شود (بدون عکس/ویدیو/فایل): TEXT_ONLY_SOURCES، یکی در هر خط (یوزرنیم یا لینک)."""
+    return {confuse(_norm_source(x)) for x in _parse(os.environ.get("TEXT_ONLY_SOURCES", ""))}
+
+
 def get_remove_terms():
     """عبارت‌های SOURCES_REMOVE (نرمال‌شده)؛ برای حذف منبع بر اساس یوزرنیم یا عنوان بعد از resolve هم استفاده می‌شود."""
     return [x.strip().lstrip("@").lower() for x in os.environ.get("SOURCES_REMOVE", "").replace(",", "\n").splitlines() if x.strip()]

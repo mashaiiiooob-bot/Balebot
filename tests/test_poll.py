@@ -489,3 +489,20 @@ assert poll.apply_reset(rs2) is False and rs2.data["checkpoints"] == {"a": 50}  
 os.environ["RESET_TOKEN"] = "t2"; assert poll.apply_reset(rs2) is True and rs2.data["checkpoints"] == {}   # توکن جدید: دوباره
 os.environ.pop("RESET_TOKEN")
 print("RESET OK")
+
+# ================= منبع «فقط متن» =================
+os.environ["TEXT_ONLY_SOURCES"] = "https://t.me/WarRoom\n@other_one"
+importlib.reload(settings)
+assert settings.get_text_only() == {"warroom", "other_one"}
+class MediaMsg(Msg):
+    def __init__(self, i, text): super().__init__(i, text); self.media = object(); self.file = type("F", (), {"size": 10})()
+    async def download_media(self, file=None): raise AssertionError("نباید دانلود شود")
+class RB:
+    def __init__(self): self.t, self.m = [], []
+    def send_text(self, c, t): self.t.append(t)
+    def send_media(self, *a): self.m.append(a)
+rb = RB()
+asyncio.run(poll.forward(rb, MediaMsg(1, "خبر فوری"), "خبر فوری", tempfile.mkdtemp(), text_only=True))
+assert len(rb.t) == 1 and rb.m == []        # فقط متن؛ رسانه حتی دانلود هم نشد
+os.environ.pop("TEXT_ONLY_SOURCES"); importlib.reload(settings); assert settings.get_text_only() == set()
+print("TEXT ONLY OK")
