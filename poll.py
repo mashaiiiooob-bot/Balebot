@@ -41,7 +41,7 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "low_importance": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
@@ -232,11 +232,18 @@ async def apply_gate(text, state):
     if res is None:
         STATS["gate_errors"] += 1
         return None
-    banned, ad = res
+    banned, ad, *rest = res
+    imp = rest[0] if rest else None
+    if imp:
+        STATS[f"imp_{imp}"] += 1
     if banned or ad:
         STATS["sh_gate_banned" if banned else "sh_gate_ad"] += 1
         if AIC.gate == "on":
             return "ai_banned" if banned else "ai_ad"
+    if imp is not None and settings.MIN_IMPORTANCE and imp < settings.MIN_IMPORTANCE:
+        STATS["sh_gate_low"] += 1
+        if AIC.gate == "on":
+            return "low_importance"
     return None
 
 

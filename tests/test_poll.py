@@ -372,9 +372,9 @@ poll.AIC = GateAI("on", None);           assert _aio.run(poll.apply_gate("x", st
 poll.AIC = GateAI("off", (True, True));  assert _aio.run(poll.apply_gate("x", stx)) is None
 # مدیر چندسرویسی: دروازه با failover
 ga, gb = FP("ga", [500]), FP("gb", [{"banned": True, "ad": False}]); aig = mk("failover", ga, gb)
-assert aig.judge_gate("n", ["t"], s_) == (True, False)
+assert aig.judge_gate("n", ["t"], s_) == (True, False, None)
 ga, gb = FP("ga2", [{"banned": "yes"}]), FP("gb2", [{"banned": False, "ad": False}]); aig = mk("failover", ga, gb)
-assert aig.judge_gate("n", ["t"], s_) == (False, False)  # پاسخ نامعتبرِ اولی نادیده، دومی جواب می‌دهد
+assert aig.judge_gate("n", ["t"], s_) == (False, False, None)  # پاسخ نامعتبرِ اولی نادیده، دومی جواب می‌دهد
 for k in ("GEMINI_API_KEY",): os.environ.pop(k, None)
 os.environ["DEEPSEEK_API_KEY"] = "z"; assert [p.name for p in ai_mod.AI().providers] == ["deepseek"]; os.environ.pop("DEEPSEEK_API_KEY")
 poll.AIC = None; _reset()
@@ -506,3 +506,32 @@ asyncio.run(poll.forward(rb, MediaMsg(1, "خبر فوری"), "خبر فوری", 
 assert len(rb.t) == 1 and rb.m == []        # فقط متن؛ رسانه حتی دانلود هم نشد
 os.environ.pop("TEXT_ONLY_SOURCES"); importlib.reload(settings); assert settings.get_text_only() == set()
 print("TEXT ONLY OK")
+
+# ================= آستانه‌ی اهمیت =================
+settings.MIN_IMPORTANCE = 3; _reset()
+poll.AIC = GateAI("on", (False, False, 5)); assert _aio.run(poll.apply_gate("x", stx)) is None            # مهم: ارسال
+poll.AIC = GateAI("on", (False, False, 3)); assert _aio.run(poll.apply_gate("x", stx)) is None            # در آستانه: ارسال
+poll.AIC = GateAI("on", (False, False, 2)); assert _aio.run(poll.apply_gate("x", stx)) == "low_importance"   # کم‌اهمیت: رد
+poll.AIC = GateAI("on", (False, False, 1)); assert _aio.run(poll.apply_gate("x", stx)) == "low_importance"
+poll.AIC = GateAI("on", (False, False, None)); assert _aio.run(poll.apply_gate("x", stx)) is None          # عدد نداد: fail-open
+poll.AIC = GateAI("on", (False, False)); assert _aio.run(poll.apply_gate("x", stx)) is None                # قالب قدیمی (دو‌تایی): ارسال
+poll.AIC = GateAI("on", (True, False, 5)); assert _aio.run(poll.apply_gate("x", stx)) == "ai_banned"       # ممنوع مهم‌تر از اهمیت
+poll.AIC = GateAI("on", (False, True, 5)); assert _aio.run(poll.apply_gate("x", stx)) == "ai_ad"
+poll.AIC = GateAI("shadow", (False, False, 1)); assert _aio.run(poll.apply_gate("x", stx)) is None        # shadow: فقط ثبت
+assert poll.STATS["sh_gate_low"] >= 3 and poll.STATS["imp_5"] >= 2 and poll.STATS["imp_1"] >= 2
+settings.MIN_IMPORTANCE = 0; poll.AIC = GateAI("on", (False, False, 1)); assert _aio.run(poll.apply_gate("x", stx)) is None   # آستانه خاموش
+settings.MIN_IMPORTANCE = 3; poll.AIC = None; _reset()
+# پارس پاسخ سرویس: اهمیت نامعتبر نادیده، ممنوع/تبلیغ حتماً بولین
+class GP(ai_mod.Provider):
+    name = "gp"
+    def __init__(self, out): super().__init__("k"); self.ok = True; self.out = out
+    def _generate(self, t): return 200, self.out
+sg = State(tempfile.mkdtemp() + "/g.json"); sg.data["ai"] = {"day": time.strftime("%Y-%m-%d", time.gmtime()), "gp": 0}
+for out, want in [({"banned": False, "ad": False, "importance": 4}, (False, False, 4)),
+                  ({"banned": False, "ad": False, "importance": 9}, (False, False, None)),
+                  ({"banned": False, "ad": False, "importance": True}, (False, False, None)),
+                  ({"banned": False, "ad": False, "importance": "5"}, (False, False, None)),
+                  ({"banned": False, "ad": False}, (False, False, None)),
+                  ({"banned": "no", "ad": False, "importance": 5}, None)]:
+    assert GP(out).gate("t", ["w"], sg) == want, (out, want)
+print("IMPORTANCE OK")

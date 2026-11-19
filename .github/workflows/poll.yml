@@ -70,6 +70,7 @@ jobs:
           AI_MODE: ${{ secrets.AI_MODE }}
           AI_STRATEGY: ${{ secrets.AI_STRATEGY }}
           AI_GATE: ${{ secrets.AI_GATE }}
+          MIN_IMPORTANCE: ${{ vars.MIN_IMPORTANCE }}
           TEXT_ONLY_SOURCES: ${{ secrets.TEXT_ONLY_SOURCES }}
           PROMO_LOOP: ${{ secrets.PROMO_LOOP }}
           PROMO_TEXT: ${{ secrets.PROMO_TEXT }}
