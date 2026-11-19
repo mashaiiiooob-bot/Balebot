@@ -36,7 +36,8 @@ PROMO_LOOP = _get("PROMO_LOOP", "off").lower()
 PROMO_TEXT = _get("PROMO_TEXT", "آیدی ما در تلگرام : @Bale_Dr")
 PROMO_INTERVAL = max(20, int(_get("PROMO_INTERVAL", "60")))      # فاصله‌ی ارسال‌ها (حداقل ۲۰ ثانیه)
 PROMO_VISIBLE = max(1, int(_get("PROMO_VISIBLE", "50")))         # مدت ماندن پیام قبل از حذف
-MIN_IMPORTANCE = int(_get("MIN_IMPORTANCE", "3"))   # ۱ تا ۵؛ پیام کم‌اهمیت‌تر از این ارسال نمی‌شود (۰ = خاموش)
+MAX_PER_HOUR = int(_get("MAX_PER_HOUR", "20"))   # سقف نرم ساعتی: بالاتر از آن فقط اهمیت ۵؛ دو برابر آن هیچ (۰ = خاموش)
+MIN_IMPORTANCE = int(_get("MIN_IMPORTANCE", "4"))   # ۱ تا ۵؛ پیام کم‌اهمیت‌تر از این ارسال نمی‌شود (۰ = خاموش)
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 MAX_FAILS_SERVICE = 60      # خطای سراسری Bale (۴۰۴/۵xx/شبکه): پیام رد نمی‌شود مگر بعد از ~ساعت‌ها (سمّی بودن خودِ پیام)

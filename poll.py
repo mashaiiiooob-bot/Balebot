@@ -41,9 +41,11 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "low_importance": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
+SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
+GATE_IMP = {"v": None}        # اهمیتِ پیامِ در حال بررسی (از دروازه)
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
 OUTAGE = {"until": 0.0, "step": 0, "since": 0.0, "diag_at": 0.0}
 SERVICE_ERR = re.compile(r"Bale HTTP (?:401|403|404|408|429|5\d\d)|Bale network error")
@@ -223,9 +225,28 @@ async def apply_ai(reason, sig, text, state):
     return reason
 
 
+def rate_limit_reason(imp, now):
+    """سقف نرم ساعتی برای حفاظت از بله (۴۲۹) و کم‌کردن حجم: بالاتر از سقف فقط اهمیت ۵ (یا نامشخص نه)؛ دو برابر سقف هیچ."""
+    cap = settings.MAX_PER_HOUR
+    if not cap:
+        return None
+    recent = sum(1 for t in SENT_TS if now - t < 3600)
+    if recent >= 2 * cap or (recent >= cap and imp != 5):
+        return "rate_cap"
+    return None
+
+
 async def apply_gate(text, state):
     """دروازه‌ی نهایی: فقط می‌تواند پیامِ آماده‌ی ارسال را «رد» کند؛ هرگز چیزی را که قانون‌ها رد کرده‌اند آزاد نمی‌کند."""
-    if AIC is None or AIC.mode == "off" or AIC.gate == "off" or not AIC.allow(state):
+    GATE_IMP["v"] = None
+    if AIC is None or AIC.mode == "off" or AIC.gate == "off":
+        return None
+    for _ in range(4):                      # سرویس‌ها شلوغ‌اند: چند ثانیه صبر می‌کنیم، نه ارسال بدون بررسی
+        if AIC.allow(state):
+            break
+        await asyncio.sleep(2)
+    else:
+        STATS["ai_skipped"] += 1
         return None
     STATS["gate_calls"] += 1
     res = await asyncio.to_thread(AIC.judge_gate, text, settings.DROP_WORDS, state)
@@ -234,6 +255,7 @@ async def apply_gate(text, state):
         return None
     banned, ad, *rest = res
     imp = rest[0] if rest else None
+    GATE_IMP["v"] = imp
     if imp:
         STATS[f"imp_{imp}"] += 1
     if banned or ad:
@@ -300,6 +322,7 @@ def restore_metrics(state):
         BENCH_PAIR[k] = list(v)
     LAT_E2E.extend(m.get("e2e") or [])
     STATS_BASE.update({k: v for k, v in (m.get("stats") or {}).items() if isinstance(v, int)})
+    SENT_TS.extend(m.get("sent_ts") or [])
     SINCE["t"] = m.get("since") or time.time()
     if AIC:
         for p in AIC.providers + AIC.failed:
@@ -315,7 +338,7 @@ def snapshot_metrics(state):
         if isinstance(v, int):
             tot[k] = tot.get(k, 0) + v
     state.data["metrics"] = {
-        "since": SINCE["t"] or time.time(), "bench": BENCH, "pair": BENCH_PAIR, "e2e": list(LAT_E2E)[-300:], "stats": tot,
+        "since": SINCE["t"] or time.time(), "sent_ts": [round(t) for t in list(SENT_TS)[-200:]], "bench": BENCH, "pair": BENCH_PAIR, "e2e": list(LAT_E2E)[-300:], "stats": tot,
         "prov": {p.name: {"calls": p.calls, "ok": p.okc, "err": p.errc, "lat": [round(x) for x in list(p.lat)[-100:]]}
                  for p in ((AIC.providers + AIC.failed) if AIC else [])},
     }
@@ -438,6 +461,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
             reason = await apply_ai(reason, sig, text, state)
         if reason is None:
             reason = await apply_gate(text, state)
+        if reason is None:
+            reason = rate_limit_reason(GATE_IMP["v"], time.time())
         bench_label = True if reason in ("dropword", "ad") else (False if reason is None else None)
         if bench_label is not None and bench_wanted():
             t = asyncio.create_task(bench_task(text, bench_label, state)); _BG.add(t); t.add_done_callback(_BG.discard)
@@ -450,6 +475,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]
                 STATS["sent"] += 1
+                SENT_TS.append(time.time())
                 if OUTAGE["since"]:
                     log.info("Bale is back after %d s", int(time.time() - OUTAGE["since"]))
                 OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0})

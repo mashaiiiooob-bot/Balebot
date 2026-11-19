@@ -32,7 +32,8 @@ GATE_PROMPT = (
     "Also rate the news IMPORTANCE as an integer 1-5: 5 = major breaking event (deaths, attacks, war/security developments, "
     "disasters, major political or economic decisions); 4 = significant national/international news; 3 = ordinary news worth a brief "
     "mention; 2 = minor, local, routine, repetitive, promotional-leaning or low-impact; 1 = trivial chatter, greetings, opinion, "
-    "quotes, jokes or filler.\n"
+    "quotes, jokes or filler. Be STRICT and use the full range: most routine posts are 2 or 3; give 4 only to clearly notable "
+    "news and 5 only to rare, truly major events (at most about 1 in 10 messages).\n"
     'Reply with JSON only: {{"banned": true|false, "ad": true|false, "importance": 1-5}}\n\nMESSAGE: '
 )
 
@@ -139,7 +140,7 @@ class Provider:
 
 class Gemini(Provider):
     name = "gemini"
-    min_interval = 5.0
+    min_interval = 4.2
     default_limit = 500
     backend = None
 
@@ -219,7 +220,7 @@ class OpenAICompat(Provider):
 
 
 class Groq(OpenAICompat):
-    name, base, min_interval, default_limit = "groq", "https://api.groq.com/openai/v1", 3.0, 800
+    name, base, min_interval, default_limit = "groq", "https://api.groq.com/openai/v1", 2.1, 800
     prefer, fallback_model = ("llama-3.3-70b", "gpt-oss-120b", "llama-4", "qwen", "gpt-oss-20b", "kimi", "llama-3.1"), "llama-3.3-70b-versatile"
 
 

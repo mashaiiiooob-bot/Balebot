@@ -71,6 +71,7 @@ jobs:
           AI_STRATEGY: ${{ secrets.AI_STRATEGY }}
           AI_GATE: ${{ secrets.AI_GATE }}
           MIN_IMPORTANCE: ${{ vars.MIN_IMPORTANCE }}
+          MAX_PER_HOUR: ${{ vars.MAX_PER_HOUR }}
           TEXT_ONLY_SOURCES: ${{ secrets.TEXT_ONLY_SOURCES }}
           PROMO_LOOP: ${{ secrets.PROMO_LOOP }}
           PROMO_TEXT: ${{ secrets.PROMO_TEXT }}

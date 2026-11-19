@@ -535,3 +535,35 @@ for out, want in [({"banned": False, "ad": False, "importance": 4}, (False, Fals
                   ({"banned": "no", "ad": False, "importance": 5}, None)]:
     assert GP(out).gate("t", ["w"], sg) == want, (out, want)
 print("IMPORTANCE OK")
+
+# ================= سقف ساعتی =================
+settings.MAX_PER_HOUR = 5; poll.SENT_TS.clear(); now = time.time()
+assert poll.rate_limit_reason(3, now) is None                                 # زیر سقف
+poll.SENT_TS.extend([now - 60] * 5)
+assert poll.rate_limit_reason(4, now) == "rate_cap" and poll.rate_limit_reason(None, now) == "rate_cap"   # بالای سقف: غیر ۵ رد
+assert poll.rate_limit_reason(5, now) is None                                 # بالای سقف ولی اهمیت ۵: عبور
+poll.SENT_TS.extend([now - 60] * 5)
+assert poll.rate_limit_reason(5, now) == "rate_cap"                           # دو برابر سقف: هیچ
+poll.SENT_TS.clear(); poll.SENT_TS.extend([now - 4000] * 20)
+assert poll.rate_limit_reason(3, now) is None                                 # ارسال‌های قدیمی‌تر از یک ساعت حساب نمی‌شوند
+settings.MAX_PER_HOUR = 0; poll.SENT_TS.extend([now] * 99); assert poll.rate_limit_reason(1, now) is None   # خاموش
+# ماندگاری بین اجراها
+settings.MAX_PER_HOUR = 20; poll.SENT_TS.clear(); poll.SENT_TS.extend([now - 10, now - 20])
+sm = State(tempfile.mkdtemp() + "/t.json"); poll.AIC = None; poll.snapshot_metrics(sm); sm.save()
+poll.SENT_TS.clear(); poll.restore_metrics(State(sm.path)); assert len(poll.SENT_TS) == 2
+# دروازه: اگر سرویس‌ها شلوغ باشند، صبر می‌کند و بعد بررسی می‌کند (نه ارسال بدون بررسی)
+class BusyAI(GateAI):
+    def __init__(self): super().__init__("on", (False, False, 2)); self.n = 0
+    def allow(self, s): self.n += 1; return self.n >= 3
+_orig_sleep = asyncio.sleep
+async def _fast(x): return None
+asyncio.sleep = _fast
+_reset(); settings.MIN_IMPORTANCE = 4; poll.AIC = BusyAI()
+assert _aio.run(poll.apply_gate("x", stx)) == "low_importance" and poll.STATS["gate_calls"] == 1 and poll.STATS["ai_skipped"] == 0
+class NeverAI(GateAI):
+    def allow(self, s): return False
+_reset(); poll.AIC = NeverAI("on", (False, False, 1))
+assert _aio.run(poll.apply_gate("x", stx)) is None and poll.STATS["ai_skipped"] == 1 and poll.GATE_IMP["v"] is None   # بعد از چند بار صبر: fail-open
+asyncio.sleep = _orig_sleep
+poll.AIC = None; poll.SENT_TS.clear(); settings.MIN_IMPORTANCE = 3; settings.MAX_PER_HOUR = 20; _reset()
+print("RATE CAP OK")
