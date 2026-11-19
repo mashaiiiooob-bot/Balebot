@@ -33,6 +33,7 @@ import ai as ai_mod
 from promo import promo_loop
 from state import State
 from telegram_out import FanoutBale, TelegramLane
+import tg_panel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
@@ -380,7 +381,22 @@ def classify(raw, text, state):
     return None, sig
 
 
+def project_snapshot(state, n_sources, n_failed, tg_lane):
+    """وضعیت پروژه برای پنل تلگرام (فقط خواندنی؛ هیچ شمارنده‌ای تغییر نمی‌کند)."""
+    tot = dict(STATS_BASE)
+    for k, v in STATS.items():
+        if isinstance(v, int):
+            tot[k] = tot.get(k, 0) + v
+    return {"totals": tot, "run": dict(STATS), "uptime_min": int((time.time() - STARTED) / 60),
+            "sources": {"count": n_sources, "failed": n_failed}, "paused": bool(state.data.get("paused")),
+            "bale": {"diag": BASE_STATUS.get("bale_diag"), "outage_active": time.monotonic() < OUTAGE["until"]},
+            "tg_lane": tg_lane.status() if tg_lane else None,
+            "ai_providers": ([{"name": p.name, "ok": True} for p in AIC.providers] + [{"name": p.name, "ok": False} for p in AIC.failed]) if AIC else []}
+
+
 async def process_source(client, bale, state, entity, tmpdir, scrub=()):
+    if state.data.get("paused"):       # توقف ارسال از پنل تلگرام؛ checkpoint جلو نمی‌رود (پس از ادامه، پیام‌های مجاز ارسال می‌شوند)
+        return
     key = key_for(entity)
     tag = key[:6]  # نام کانال در لاگ عمومی چاپ نمی‌شود
     names = [getattr(entity, "title", None), getattr(entity, "username", None), *scrub]
@@ -609,6 +625,14 @@ async def run():
         restore_metrics(state)
         BASE_STATUS["bale_diag"] = await asyncio.to_thread(bale_diag, bale, settings.BALE_DESTINATION)
         scrub = collect_names(entities)
+        panel, panel_tasks = None, []
+        try:
+            panel = await tg_panel.build_panel(client, state, lambda: project_snapshot(state, len(entities), len(failed), tg_lane), wake=wake.set)
+        except Exception as exc:                 # noqa: BLE001  خرابی پنل هرگز نباید ارسال را مختل کند
+            log.warning("Telegram panel disabled: %s", type(exc).__name__)
+        if panel:
+            panel_tasks = [asyncio.create_task(panel.run()), asyncio.create_task(panel.snapshot_loop())]
+            log.info("Telegram panel enabled (%d admin(s))", len(panel.admins))
         if settings.PROMO_LOOP == "on":
             promo_task = asyncio.create_task(promo_loop(bale, state, promo_stop, settings.BALE_DESTINATION,
                                                         settings.PROMO_TEXT, settings.PROMO_INTERVAL, settings.PROMO_VISIBLE))
@@ -632,6 +656,8 @@ async def run():
             totals = snapshot_metrics(state)
             if tg_lane:
                 BASE_STATUS["tg"] = tg_lane.status()
+            if panel:
+                BASE_STATUS["panel"] = panel.status()
             write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
                           "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
@@ -652,6 +678,10 @@ async def run():
                 await asyncio.wait_for(promo_task, timeout=20)  # پیامِ در حال نمایش پاک شود
         except Exception:
             pass
+        if panel_tasks:
+            panel.stop()
+            for t_ in panel_tasks:
+                t_.cancel()
         if tg_lane:                              # صف تلگرام تا ۳۰ ثانیه فرصت می‌گیرد خالی شود؛ سپس tg_seen ذخیره می‌شود
             try:
                 for _ in range(30):

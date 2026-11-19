@@ -10,7 +10,8 @@ class State:
 
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": [], "metrics": {}, "reset_token": "", "tg_seen": {}}
+        self.data = {"version": STATE_VERSION, "checkpoints": {}, "fails": {}, "alerts": {}, "seen": [], "metrics": {}, "reset_token": "", "tg_seen": {},
+                     "paused": False, "tgstats": [], "panel_offset": 0, "panel_last": {}}
         self.dirty = False
         if self.path.exists():
             try:
@@ -22,6 +23,10 @@ class State:
                     self.data["metrics"] = dict(loaded.get("metrics", {}))
                     self.data["reset_token"] = loaded.get("reset_token", "")
                     self.data["tg_seen"] = dict(loaded.get("tg_seen", {}))   # کلیدهای هش‌شده‌ی ارسال تلگرام (ضدتکرار)
+                    self.data["paused"] = bool(loaded.get("paused", False))          # توقف ارسال از پنل تلگرام
+                    self.data["tgstats"] = list(loaded.get("tgstats", []))           # نمونه‌های ساعتی مشترکین (فقط عدد)
+                    self.data["panel_offset"] = int(loaded.get("panel_offset", 0) or 0)
+                    self.data["panel_last"] = dict(loaded.get("panel_last", {}))
                     if "ai" in loaded:
                         self.data["ai"] = loaded["ai"]
                 else:
