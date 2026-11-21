@@ -28,7 +28,7 @@ from bale_client import BaleClient
 from cleaner import clean_message
 from news_filter import is_news, is_ad, has_dropword
 from profanity import has_profanity
-from dedupe import signature, is_duplicate
+from dedupe import signature, is_duplicate, is_duplicate_v1, compare as dedupe_compare, context as dedupe_context
 import ai as ai_mod
 from promo import promo_loop
 from state import State
@@ -41,7 +41,7 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
 SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
@@ -180,16 +180,18 @@ async def fetch_new(client, entity, last_id):
     return None
 
 
-def ai_candidates(sig, now):
-    a, an = set(sig["w"]), set(sig["n"])
+def ai_candidates(sig, now, state=None):
+    """نامزدهای مقایسه برای هوش مصنوعی: فقط پیام‌های اخیرِ «بدون تضاد مکان/عدد/جزئیات» که واژه‌ی اختصاصیِ مشترک دارند
+    (شباهت فقط بر پایه‌ی واژه‌های رایج کافی نیست). خروجی: [(wo_min, wj, entry)] به ترتیب شباهت."""
+    ctx = dedupe_context(state.recent_seen(now)) if state is not None else ({}, 0)
     out = []
     for e in RECENT:
-        if now - e["t"] > 21600 or (an and e["n"] and not (an <= e["n"] or e["n"] <= an)):
+        if now - e["t"] > 21600:
             continue
-        inter = len(a & e["w"])
-        if inter < 3:
+        c = dedupe_compare(sig, {"w": e["w"], "n": e["n"], "p": e.get("p", ())}, ctx)
+        if c["conflict"] or c["mismatch"] or c["n_inter"] < 3 or c["distinct_inter"] < 1:
             continue
-        out.append((inter / min(len(a), len(e["w"])), inter / len(a | e["w"]), e))
+        out.append((c["wo_min"], c["wj"], e))
     out.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return out[:3]
 
@@ -198,11 +200,11 @@ async def apply_ai(reason, sig, text, state):
     """فقط موارد مرزی به هوش مصنوعی می‌رسد. حالت shadow: ثبت می‌کند ولی تصمیم را عوض نمی‌کند."""
     if AIC is None or AIC.mode == "off" or reason not in (None, "duplicate"):
         return reason
-    cands = ai_candidates(sig, time.time())
+    cands = ai_candidates(sig, time.time(), state)
     if not cands:
         return reason
     ov, jc, _ = cands[0]
-    if (ov >= 0.9 and jc >= 0.7) or ov < 0.45:
+    if (ov >= 0.9 and jc >= 0.7) or ov < 0.5:
         return reason  # یا قطعاً تکراری، یا آشکارا متفاوت
     if not AIC.allow(state):
         STATS["ai_skipped"] += 1
@@ -406,7 +408,15 @@ def classify(raw, text, state):
     if not is_news(text):
         return "not_news", None
     sig = signature(text)
-    if is_duplicate(sig, state.recent_seen(time.time()), time.time()):
+    now = time.time()
+    entries = state.recent_seen(now)
+    v2 = is_duplicate(sig, entries, now)
+    v1 = is_duplicate_v1(sig, entries, now)
+    if v1 and not v2:
+        STATS["dup_v1_only"] += 1      # نسخه‌ی قدیمی «تکراری» می‌گفت، نسخه‌ی جدید نه (پیام نجات‌یافته)
+    elif v2 and not v1:
+        STATS["dup_v2_only"] += 1
+    if (v1 if settings.DEDUPE_ENGINE == "v1" else v2):
         return "duplicate", None
     return None, sig
 
@@ -472,7 +482,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
             try:
                 await forward(bale, msg, text, tmpdir, text_only)
                 state.add_seen(sig, time.time())
-                RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "text": text[:700], "t": time.time()})
+                RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "p": set(sig.get("p", [])), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]
                 STATS["sent"] += 1
                 SENT_TS.append(time.time())

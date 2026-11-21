@@ -65,7 +65,7 @@ class State:
         return [e for e in self.data["seen"] if now - e.get("t", 0) < window]
 
     def add_seen(self, sig, now, cap=600):
-        self.data["seen"] = (self.recent_seen(now) + [{"t": int(now), "w": sig["w"], "n": sig["n"]}])[-cap:]
+        self.data["seen"] = (self.recent_seen(now) + [{"t": int(now), "w": sig["w"], "n": sig["n"], "p": sig.get("p", [])}])[-cap:]
         self.dirty = True
 
     def save(self):

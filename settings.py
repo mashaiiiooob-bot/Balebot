@@ -38,6 +38,7 @@ PROMO_INTERVAL = max(20, int(_get("PROMO_INTERVAL", "60")))      # فاصله‌
 PROMO_VISIBLE = max(1, int(_get("PROMO_VISIBLE", "50")))         # مدت ماندن پیام قبل از حذف
 MAX_PER_HOUR = int(_get("MAX_PER_HOUR", "20"))   # سقف نرم ساعتی: بالاتر از آن فقط اهمیت ۵؛ دو برابر آن هیچ (۰ = خاموش)
 MIN_IMPORTANCE = int(_get("MIN_IMPORTANCE", "4"))   # ۱ تا ۵؛ پیام کم‌اهمیت‌تر از این ارسال نمی‌شود (۰ = خاموش)
+DEDUPE_ENGINE = _get("DEDUPE_ENGINE", "v2").lower()   # v2 = وزن IDF + لنگر مکان/عدد؛ v1 = روش قبلی
 MAX_FILE_MB = 45
 MAX_FAILS = 5
 MAX_FAILS_SERVICE = 60      # خطای سراسری Bale (۴۰۴/۵xx/شبکه): پیام رد نمی‌شود مگر بعد از ~ساعت‌ها (سمّی بودن خودِ پیام)
