@@ -798,7 +798,7 @@ async def run():
                 BASE_STATUS["tg"] = tg_lane.status()
             if panel:
                 BASE_STATUS["panel"] = panel.status()
-            write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
+            write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "sem": sem_info(), "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
                           "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
