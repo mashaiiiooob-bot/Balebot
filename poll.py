@@ -30,6 +30,7 @@ from news_filter import is_news, is_ad, has_dropword
 from profanity import has_profanity
 from dedupe import signature, is_duplicate, is_duplicate_v1, compare as dedupe_compare, context as dedupe_context
 import ai as ai_mod
+import semantic
 from promo import promo_loop
 from state import State
 from telegram_out import FanoutBale, TelegramLane
@@ -41,9 +42,10 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "sem_calls": 0, "sem_errors": 0, "sem_dup": 0, "sem_new": 0, "sem_llm": 0, "sem_rescued": 0, "sem_caught": 0, "sem_vetoed": 0, "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
+SEM = {"emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None}   # معنایی (فقط RAM + کالیبراسیون)
 SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
 GATE_IMP = {"v": None}        # اهمیتِ پیامِ در حال بررسی (از دروازه)
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
@@ -196,6 +198,56 @@ def ai_candidates(sig, now, state=None):
     return out[:3]
 
 
+async def apply_semantic(reason, sig, text, state):
+    """تصمیم معنایی. خروجی: (reason, decided). decided=False یعنی نظری نداد (به روش واژگانی/AI برگرد)."""
+    SEM["vec"] = None
+    emb = SEM["emb"]
+    if SEM["mode"] == "off" or emb is None or not emb.provider or reason not in (None, "duplicate"):
+        return reason, False
+    STATS["sem_calls"] += 1
+    vecs = await asyncio.to_thread(emb.embed, [text])
+    if not vecs:
+        STATS["sem_errors"] += 1
+        return reason, False
+    vec = vecs[0]
+    SEM["vec"] = vec
+    now = time.time()
+    mem = SEM["mem"]
+    ctx = dedupe_context(state.recent_seen(now))
+    cands = mem.top(vec, sig, now, dedupe_compare, ctx)
+    lo, hi = SEM["cal"].thresholds()
+    if not cands:
+        # هیچ همتای بدون تضاد در حافظه نیست. اگر روش واژگانی «تکراری» گفته بود و حافظه گرم نیست، به او اعتماد می‌کنیم.
+        if reason == "duplicate" and not mem.warm():
+            return reason, False
+        if reason == "duplicate":
+            STATS["sem_vetoed"] += 1    # همتا فقط به‌خاطر تضاد مکان/عدد کنار رفت: واقعه‌ی دیگر
+            STATS["sem_rescued"] += 1
+        return None, True
+    c, entry = cands[0]
+    if c >= hi:
+        verdict = True
+    elif c <= lo:
+        verdict = False
+    else:
+        if AIC is None or AIC.mode == "off" or not AIC.allow(state):
+            return reason, False                # مبهم و LLM در دسترس نیست: تصمیم روش واژگانی
+        STATS["sem_llm"] += 1
+        res = await asyncio.to_thread(AIC.judge_duplicate, text, [x[1]["text"] for x in cands], state)
+        if res is None:
+            return reason, False
+        verdict = res
+        SEM["cal"].add(c, verdict)              # برچسب خودکار برای کالیبراسیون
+    STATS["sem_dup" if verdict else "sem_new"] += 1
+    if verdict:
+        if reason is None:
+            STATS["sem_caught"] += 1
+        return "duplicate", True
+    if reason == "duplicate":
+        STATS["sem_rescued"] += 1
+    return None, True
+
+
 async def apply_ai(reason, sig, text, state):
     """فقط موارد مرزی به هوش مصنوعی می‌رسد. حالت shadow: ثبت می‌کند ولی تصمیم را عوض نمی‌کند."""
     if AIC is None or AIC.mode == "off" or reason not in (None, "duplicate"):
@@ -225,6 +277,36 @@ async def apply_ai(reason, sig, text, state):
         STATS["ai_caught"] += 1
         return "duplicate"
     return reason
+
+
+async def sem_backfill(client, chat):
+    """بعد از ریستارت: آخرین پست‌های خودِ کانال را می‌خوانیم و دوباره embed می‌کنیم (متنی در ریپو ذخیره نمی‌شود)."""
+    try:
+        posts = []
+        async for m in client.iter_messages(chat, limit=120):
+            body = " ".join((m.message or "").split()).split("✍")[0].strip()
+            if len(body) >= 12 and getattr(m, "date", None):
+                posts.append((m.date.timestamp(), body))
+        posts.sort()
+        vecs = await asyncio.to_thread(SEM["emb"].embed, [b for _, b in posts]) if posts else None
+        if vecs:
+            for (ts, body), v in zip(posts, vecs):
+                SEM["mem"].add(v, body, signature(body), now=ts)
+            log.info("Semantic memory warmed with %d posts", len(vecs))
+        else:
+            STATS["sem_errors"] += 1
+    except Exception as exc:
+        STATS["sem_errors"] += 1
+        log.warning("Semantic backfill failed: %s", type(exc).__name__)
+
+
+def sem_info():
+    emb = SEM["emb"]
+    lo, hi = SEM["cal"].thresholds()
+    return {"mode": SEM["mode"], "provider": getattr(emb, "provider", None), "model": getattr(emb, "model", None),
+            "dims": getattr(emb, "dims", None), "probe": getattr(emb, "probe", None), "memory": len(SEM["mem"].items),
+            "t_low": lo, "t_high": hi, "calibration_pairs": SEM["cal"].total(),
+            "calibration": {k: v for k, v in sorted(SEM["cal"].b.items())}}
 
 
 def rate_limit_reason(imp, now):
@@ -326,6 +408,7 @@ def restore_metrics(state):
     STATS_BASE.update({k: v for k, v in (m.get("stats") or {}).items() if isinstance(v, int)})
     SENT_TS.extend(m.get("sent_ts") or [])
     SINCE["t"] = m.get("since") or time.time()
+    SEM["cal"] = semantic.Calibrator(m.get("sem_cal"))
     if AIC:
         for p in AIC.providers + AIC.failed:
             rec = (m.get("prov") or {}).get(p.name)
@@ -340,7 +423,7 @@ def snapshot_metrics(state):
         if isinstance(v, int):
             tot[k] = tot.get(k, 0) + v
     state.data["metrics"] = {
-        "since": SINCE["t"] or time.time(), "sent_ts": [round(t) for t in list(SENT_TS)[-200:]], "bench": BENCH, "pair": BENCH_PAIR, "e2e": list(LAT_E2E)[-300:], "stats": tot,
+        "since": SINCE["t"] or time.time(), "sem_cal": SEM["cal"].b, "sent_ts": [round(t) for t in list(SENT_TS)[-200:]], "bench": BENCH, "pair": BENCH_PAIR, "e2e": list(LAT_E2E)[-300:], "stats": tot,
         "prov": {p.name: {"calls": p.calls, "ok": p.okc, "err": p.errc, "lat": [round(x) for x in list(p.lat)[-100:]]}
                  for p in ((AIC.providers + AIC.failed) if AIC else [])},
     }
@@ -468,7 +551,9 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         reason, sig = ("too_old", None) if too_old else classify(raw, text, state)
         if reason in (None, "duplicate"):
             sig = sig or signature(text)
-            reason = await apply_ai(reason, sig, text, state)
+            reason, decided = await apply_semantic(reason, sig, text, state)
+            if not decided:
+                reason = await apply_ai(reason, sig, text, state)
         if reason is None:
             reason = await apply_gate(text, state)
         if reason is None:
@@ -486,6 +571,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 del RECENT[:-40]
                 STATS["sent"] += 1
                 SENT_TS.append(time.time())
+                if SEM["vec"] is not None:
+                    SEM["mem"].add(SEM["vec"], text, sig)
                 if OUTAGE["since"]:
                     log.info("Bale is back after %d s", int(time.time() - OUTAGE["since"]))
                 OUTAGE.update({"until": 0.0, "step": 0, "since": 0.0})
@@ -668,6 +755,14 @@ async def run():
         BASE_STATUS["ai"] = AIC.info()
         apply_reset(state)
         restore_metrics(state)
+        SEM["mode"] = os.environ.get("SEMANTIC_MODE", "on").strip().lower()
+        if SEM["mode"] != "off":
+            emb = semantic.Embedder()
+            await asyncio.to_thread(emb.init)
+            SEM["emb"] = emb
+            SEM["cal"] = semantic.Calibrator((state.data.get("metrics") or {}).get("sem_cal"))
+            if emb.provider and tg_lane:
+                asyncio.create_task(sem_backfill(client, tg_lane.chat))
         BASE_STATUS["bale_diag"] = await asyncio.to_thread(bale_diag, bale, settings.BALE_DESTINATION)
         scrub = collect_names(entities)
         panel, panel_tasks = None, []

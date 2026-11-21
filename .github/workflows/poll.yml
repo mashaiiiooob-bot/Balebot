@@ -72,6 +72,7 @@ jobs:
           AI_GATE: ${{ secrets.AI_GATE }}
           MIN_IMPORTANCE: ${{ vars.MIN_IMPORTANCE }}
           DEDUPE_ENGINE: ${{ vars.DEDUPE_ENGINE }}
+          SEMANTIC_MODE: ${{ vars.SEMANTIC_MODE }}
           MAX_PER_HOUR: ${{ vars.MAX_PER_HOUR }}
           TEXT_ONLY_SOURCES: ${{ secrets.TEXT_ONLY_SOURCES }}
           PROMO_LOOP: ${{ secrets.PROMO_LOOP }}
