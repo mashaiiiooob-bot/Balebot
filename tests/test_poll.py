@@ -583,4 +583,6 @@ assert not f2.ok and f2.inits == 1 and a2.failed == [f2] and a2.mode == "off"   
 f3 = Flaky(["http_503", "http_503", "http_503"]); a3 = mk2(f3); a3.init(retries=3, wait=0)
 assert a3.failed == [f3] and a3.revive() == ["flaky"] and a3.providers == [f3] and a3.failed == [] and a3.mode != "off"   # revive بعداً برش می‌گرداند
 f4 = Flaky(["http_402"]); a4 = mk2(f4); a4.init(retries=2, wait=0); assert a4.revive() == [] and a4.failed == [f4]  # ۴۰۲ (اعتبار صفر): برنمی‌گردد
+f5 = Flaky(["http_410", "http_410", "http_410"]); a5 = mk2(f5); a5.init(retries=3, wait=0)
+assert a5.failed == [f5] and a5.revive() == ["flaky"]                                                  # ۴۱۰ (مدل/سرویس موقتاً «Gone») هم برمی‌گردد
 print("REVIVE OK")

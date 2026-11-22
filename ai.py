@@ -346,7 +346,7 @@ class AI:
         self.gate = gate if gate in ("off", "shadow", "on") else "shadow"
         self.failed = []
 
-    TRANSIENT = ("http_0", "http_429", "http_500", "http_502", "http_503", "http_504", "bad_json")
+    TRANSIENT = ("http_0", "http_408", "http_410", "http_429", "http_500", "http_502", "http_503", "http_504", "bad_json")
 
     def init(self, retries=3, wait=4):
         """خطای موقتی (۵۰۳، ۴۲۹، شبکه) در شروع نباید سرویس را برای کل اجرا حذف کند: چند بار دوباره تلاش."""

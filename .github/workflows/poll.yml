@@ -75,6 +75,9 @@ jobs:
           SEMANTIC_MODE: ${{ vars.SEMANTIC_MODE }}
           ANALYST_MODE: ${{ vars.ANALYST_MODE }}
           AUDIT_PER_DAY: ${{ vars.AUDIT_PER_DAY }}
+          AI_LIMIT_GEMINI: ${{ vars.AI_LIMIT_GEMINI }}
+          AI_LIMIT_GROQ: ${{ vars.AI_LIMIT_GROQ }}
+          AI_LIMIT_CLOUDFLARE: ${{ vars.AI_LIMIT_CLOUDFLARE }}
           MAX_PER_HOUR: ${{ vars.MAX_PER_HOUR }}
           TEXT_ONLY_SOURCES: ${{ secrets.TEXT_ONLY_SOURCES }}
           PROMO_LOOP: ${{ secrets.PROMO_LOOP }}
