@@ -1,0 +1,44 @@
+name: AI status report
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# عمداً بدون concurrency: همزمان با ربات اصلی اجرا می‌شود و فقط می‌خواند
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          ref: state
+          path: state
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Ask each AI for its own status report
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python ai_report.py
+
+      # شاخه‌ی جدا (reports): ربات اصلی شاخه‌ی state را هر دقیقه بازنویسی می‌کند و فایل را پاک می‌کرد
+      - name: Publish to the reports branch
+        run: |
+          mkdir /tmp/rep && cp ai_reports.json ai_reports.md /tmp/rep/
+          cd /tmp/rep && git init -q && git checkout -q -b reports
+          git config user.name "balebot-report" && git config user.email "balebot-report@users.noreply.github.com"
+          git add . && git commit -q -m "AI status report"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" reports
