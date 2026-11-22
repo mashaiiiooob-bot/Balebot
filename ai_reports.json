@@ -1,0 +1,174 @@
+{
+ "generated_utc": "2026-11-22 17:44",
+ "reports": {
+  "groq": "۱) نقش من: من مدل openai/gpt-oss-120b هستم که در رله‌کردن اخبار تلگرام به‌عنوان یک مؤلفهٔ تحلیلی کار می‌کنم؛ در زنجیرهٔ failover من اولین مکان (\"1 of 3\") را دارم. \n۲) عملکرد من: از تاریخ ۲۰۲۶‑11‑09 تا کنون ۵۸۷۴ درخواست دریافت کرده‌ام که ۵۶۱۷ مورد با موفقیت پردازش شد و ۲۵۷ خطا (نرخ خطا 0.044) داشته‌ام. تاخیر میانهٔ p50 509 ms و p95 738 ms است. در این دوره دقت نسبت به قوانین به‌صورت recall 0.33 و false_alarm 0.0 گزارش شد. \n۳) مشکل‌ها و محدودیت‌ها: نرخ یادآوری پایین (۳۳٪) نشان می‌دهد بسیاری از پیام‌های ممنوع به‌درستی شناسایی نمی‌شوند؛ همچنین خطاهای سیستم (۲۵۷) و عدم وجود نمونهٔ false positive (fp 0) ممکن است به‌دلیل کمبود داده‌های منفی باشد. \n۴) یک پیشنهاد: برای بهبود recall، مجموعهٔ آموزشی را با نمونه‌های بیشتر از پیام‌های قانون‑مخالف تقویت کنیم و یک لایهٔ پیش‌پردازش برای فیلتر کردن خطاهای سیستمی اضافه کنیم.",
+  "gemini": "۱) نقش من: من مدل gemini-3.5-flash-lite هستم که به عنوان یکی از اجزای هوش مصنوعی در بات بازپخش اخبار تلگرام فعالیت می‌کنم و جایگاه من در صف جایگزینی ۲ از ۳ است.\n\n۲) عملکرد من: از تاریخ اندازه‌گیری 2026-11-09 03:31 تاکنون، ۴۱۰۴ درخواست دریافت کرده‌ام که ۳۸۵۹ مورد موفق و ۲۴۵ مورد با خطا همراه بوده است (نرخ خطا ۰.۰۶). میزان بازیابی (recall) من ۰.۴۳ و هشدار کاذب (false_alarm) من ۰.۰۴ ثبت شده است. میزان توافق من با مدل کلادفلر ۰.۸۲ و با گروق ۰.۹۱ است.\n\n۳) مشکل‌ها و محدودیت‌ها: سهمیه‌ روزانه من کاملاً پر شده است (۵۰۰ از ۵۰۰). همچنین تاخیر من در صدک ۹۵ به ۸۴۸۵ میلی‌ثانیه می‌رسد و اطلاعات پیام‌های گذشته را به خاطر نمی‌سپارم.\n\n۴) یک پیشنهاد: پیشنهاد می‌کنم سهمیه روزانه افزایش یابد تا درخواست‌های کمتری با مشکل مواجه شوند.",
+  "cloudflare": "من به عنوان یک مدل هوش مصنوعی در پروژه رله اخبار فارسی کار می کنم. ۱) نقش من کمک به تصمیم گیری در مورد اینکه آیا پست های خبری در تلگرام باید مسدود شوند، آگهی هستند، تکراری هستند یا مهم هستند. ۲) عملکرد من از تاریخ ۲۰۲۶-۱۱-۰۹ ۰۳:۳۱ به صورت مداوم اندازه گیری شده است و تاکنون ۳۲۶۴ درخواست پردازش کرده ام که از این تعداد ۱۳ درخواست با خطا مواجه شده است و نرخ خطای ۰.۰۰۴ را نشان می دهد. همچنین، میزان یادآوری من ۰.۴۹ و هشدار کاذب من ۰.۲۱ است. ۳) مشکل‌ها و محدودیت‌ها شامل نرخ خطای ۰.۰۰۴ و محدودیت روزانه ۴۰۰ درخواست است که تاکنون ۲۷۰ درخواست استفاده شده است. ۴) یک پیشنهاد این است که برای بهبود دقت و کاهش نرخ خطا، آموزش بیشتر و به روز رسانی مدل مورد نیاز است."
+ },
+ "errors": {},
+ "facts": {
+  "groq": {
+   "model": "openai/gpt-oss-120b",
+   "probe_at_startup": "ok",
+   "my_place_in_failover_order": "1 of 3",
+   "measured_since_utc": "2026-11-09 03:31",
+   "requests": 5874,
+   "ok": 5617,
+   "errors": 257,
+   "error_rate": 0.044,
+   "latency_ms": {
+    "p50": 509,
+    "p95": 738,
+    "samples": 100
+   },
+   "daily_quota": {
+    "used_today": 250,
+    "limit": 800
+   },
+   "this_run_counters": {
+    "groq_analyst_ok": 26,
+    "groq_error": 14
+   },
+   "accuracy_vs_rules": {
+    "tp": 149,
+    "fn": 296,
+    "fp": 0,
+    "tn": 26,
+    "err": 34,
+    "recall": 0.33,
+    "false_alarm": 0.0
+   },
+   "agreement_with_other_models": {
+    "cloudflare": {
+     "agree": 357,
+     "of": 427,
+     "rate": 0.84
+    },
+    "gemini": {
+     "agree": 250,
+     "of": 275,
+     "rate": 0.91
+    }
+   },
+   "system_wide_counts": {
+    "seen": 28767,
+    "sent": 2909,
+    "duplicate": 1284,
+    "analyst_calls": 395,
+    "analyst_veto_confirmed": 188,
+    "analyst_veto_overruled": 97,
+    "analyst_rescued": 2,
+    "low_importance": 694,
+    "ai_skipped": 300
+   }
+  },
+  "gemini": {
+   "model": "gemini-3.5-flash-lite",
+   "probe_at_startup": "ok",
+   "my_place_in_failover_order": "2 of 3",
+   "measured_since_utc": "2026-11-09 03:31",
+   "requests": 4104,
+   "ok": 3859,
+   "errors": 245,
+   "error_rate": 0.06,
+   "latency_ms": {
+    "p50": 1089,
+    "p95": 8485,
+    "samples": 100
+   },
+   "daily_quota": {
+    "used_today": 500,
+    "limit": 500
+   },
+   "this_run_counters": {
+    "gemini_analyst_ok": 81,
+    "gemini_error": 19,
+    "gemini_gate_ok": 14
+   },
+   "accuracy_vs_rules": {
+    "tp": 232,
+    "fn": 306,
+    "fp": 28,
+    "tn": 766,
+    "err": 48,
+    "recall": 0.43,
+    "false_alarm": 0.04
+   },
+   "agreement_with_other_models": {
+    "cloudflare": {
+     "agree": 987,
+     "of": 1197,
+     "rate": 0.82
+    },
+    "groq": {
+     "agree": 250,
+     "of": 275,
+     "rate": 0.91
+    }
+   },
+   "system_wide_counts": {
+    "seen": 28767,
+    "sent": 2909,
+    "duplicate": 1284,
+    "analyst_calls": 395,
+    "analyst_veto_confirmed": 188,
+    "analyst_veto_overruled": 97,
+    "analyst_rescued": 2,
+    "low_importance": 694,
+    "ai_skipped": 300
+   }
+  },
+  "cloudflare": {
+   "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+   "probe_at_startup": "http_410",
+   "my_place_in_failover_order": "3 of 3",
+   "measured_since_utc": "2026-11-09 03:31",
+   "requests": 3264,
+   "ok": 3251,
+   "errors": 13,
+   "error_rate": 0.004,
+   "latency_ms": {
+    "p50": 2343,
+    "p95": 5660,
+    "samples": 100
+   },
+   "daily_quota": {
+    "used_today": 270,
+    "limit": 400
+   },
+   "this_run_counters": {},
+   "accuracy_vs_rules": {
+    "tp": 369,
+    "fn": 380,
+    "fp": 207,
+    "tn": 766,
+    "err": 0,
+    "recall": 0.49,
+    "false_alarm": 0.21
+   },
+   "agreement_with_other_models": {
+    "gemini": {
+     "agree": 987,
+     "of": 1197,
+     "rate": 0.82
+    },
+    "groq": {
+     "agree": 357,
+     "of": 427,
+     "rate": 0.84
+    }
+   },
+   "system_wide_counts": {
+    "seen": 28767,
+    "sent": 2909,
+    "duplicate": 1284,
+    "analyst_calls": 395,
+    "analyst_veto_confirmed": 188,
+    "analyst_veto_overruled": 97,
+    "analyst_rescued": 2,
+    "low_importance": 694,
+    "ai_skipped": 300
+   }
+  }
+ }
+}
