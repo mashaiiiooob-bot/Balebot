@@ -73,6 +73,8 @@ jobs:
           MIN_IMPORTANCE: ${{ vars.MIN_IMPORTANCE }}
           DEDUPE_ENGINE: ${{ vars.DEDUPE_ENGINE }}
           SEMANTIC_MODE: ${{ vars.SEMANTIC_MODE }}
+          ANALYST_MODE: ${{ vars.ANALYST_MODE }}
+          AUDIT_PER_DAY: ${{ vars.AUDIT_PER_DAY }}
           MAX_PER_HOUR: ${{ vars.MAX_PER_HOUR }}
           TEXT_ONLY_SOURCES: ${{ secrets.TEXT_ONLY_SOURCES }}
           PROMO_LOOP: ${{ secrets.PROMO_LOOP }}

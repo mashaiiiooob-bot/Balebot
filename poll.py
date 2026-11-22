@@ -42,10 +42,11 @@ log = logging.getLogger("balebot")
 # شمارنده‌های بی‌نام (فقط عدد) برای عیب‌یابی؛ در status.json نوشته می‌شود
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
-         "sem_calls": 0, "sem_errors": 0, "sem_dup": 0, "sem_new": 0, "sem_llm": 0, "sem_rescued": 0, "sem_caught": 0, "sem_vetoed": 0, "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
+         "analyst_calls": 0, "analyst_errors": 0, "analyst_rescued": 0, "analyst_veto_confirmed": 0, "analyst_veto_overruled": 0, "sem_calls": 0, "sem_errors": 0, "sem_dup": 0, "sem_new": 0, "sem_llm": 0, "sem_rescued": 0, "sem_caught": 0, "sem_vetoed": 0, "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
          "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
-SEM = {"emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None}   # معنایی (فقط RAM + کالیبراسیون)
+ANALYST = {"on": False}   # تحلیل کامل در یک بار خواندن (جایگزین پرسش‌های جدای دروازه/تکراری)
+SEM = {"olds": [], "c": None, "emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None}   # معنایی (فقط RAM + کالیبراسیون)
 SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
 GATE_IMP = {"v": None}        # اهمیتِ پیامِ در حال بررسی (از دروازه)
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
@@ -201,6 +202,7 @@ def ai_candidates(sig, now, state=None):
 async def apply_semantic(reason, sig, text, state):
     """تصمیم معنایی. خروجی: (reason, decided). decided=False یعنی نظری نداد (به روش واژگانی/AI برگرد)."""
     SEM["vec"] = None
+    SEM["olds"], SEM["c"] = [], None
     emb = SEM["emb"]
     if SEM["mode"] == "off" or emb is None or not emb.provider or reason not in (None, "duplicate"):
         return reason, False
@@ -216,6 +218,8 @@ async def apply_semantic(reason, sig, text, state):
     ctx = dedupe_context(state.recent_seen(now))
     cands = mem.top(vec, sig, now, dedupe_compare, ctx)
     lo, hi = SEM["cal"].thresholds()
+    if cands and cands[0][0] > lo:
+        SEM["olds"], SEM["c"] = [x[1]["text"] for x in cands], cands[0][0]   # همتاها برای تحلیل‌گر
     if not cands:
         # هیچ همتای بدون تضاد در حافظه نیست. اگر روش واژگانی «تکراری» گفته بود و حافظه گرم نیست، به او اعتماد می‌کنیم.
         if reason == "duplicate" and not mem.warm():
@@ -223,10 +227,16 @@ async def apply_semantic(reason, sig, text, state):
         if reason == "duplicate":
             STATS["sem_vetoed"] += 1    # همتا فقط به‌خاطر تضاد مکان/عدد کنار رفت: واقعه‌ی دیگر
             STATS["sem_rescued"] += 1
-        return None, True
+        return None, not ANALYST["on"]
     c, entry = cands[0]
     if c >= hi:
         verdict = True
+    elif ANALYST["on"]:
+        # شباهت متوسط/پایین: تحلیل‌گرِ متن کاملِ LLM تصمیم می‌گیرد. تکراریِ واژگانیِ بدون همتای نزدیک (c ≤ t_low) نجات می‌یابد.
+        if reason == "duplicate" and c <= lo and mem.warm():
+            STATS["sem_rescued"] += 1
+            return None, False
+        return reason, False
     elif c <= lo:
         verdict = False
     else:
@@ -246,6 +256,101 @@ async def apply_semantic(reason, sig, text, state):
     if reason == "duplicate":
         STATS["sem_rescued"] += 1
     return None, True
+
+
+def analysis_verdict(res):
+    """از روی تحلیل کامل: None = ارسال؛ وگرنه کدِ دلیلِ حذف."""
+    if res["banned"]:
+        return "ai_banned"
+    if res["ad"]:
+        return "ai_ad"
+    if res["same_event_as"] > 0 and not res["adds_new_info"]:
+        return "duplicate"
+    if settings.MIN_IMPORTANCE and res["importance"] < settings.MIN_IMPORTANCE:
+        return "low_importance"
+    return None
+
+
+def veto_confirmed(verdict, second):
+    """نظر دوم: حذف فقط با توافق. اگر نظر دوم در دسترس نباشد: ممنوع/تبلیغ/کم‌اهمیت پذیرفته می‌شود، ولی «تکراری» نه (پیام تازه نباید حذف شود)."""
+    if second is None:
+        return verdict != "duplicate"
+    if verdict == "ai_banned":
+        return second["banned"]
+    if verdict == "ai_ad":
+        return second["ad"]
+    if verdict == "duplicate":
+        return second["same_event_as"] > 0 and not second["adds_new_info"]
+    return bool(settings.MIN_IMPORTANCE) and second["importance"] < settings.MIN_IMPORTANCE
+
+
+async def apply_analyst(reason, sig, text, state):
+    """متن کامل پیام را (با نزدیک‌ترین خبرهای قبلی) یک بار تحلیل می‌کند و تصمیم می‌گیرد. خروجی: (reason, decided)."""
+    GATE_IMP["v"] = None
+    if not ANALYST["on"] or AIC is None or AIC.mode == "off" or AIC.gate == "off" or reason not in (None, "duplicate"):
+        return reason, False
+    for _ in range(4):                       # سرویس‌ها شلوغ‌اند: چند ثانیه صبر، نه ارسال بدون بررسی
+        if AIC.can_analyze(state):
+            break
+        await asyncio.sleep(2)
+    else:
+        STATS["ai_skipped"] += 1
+        return reason, False
+    olds = list(SEM["olds"]) or ([c[2]["text"] for c in ai_candidates(sig, time.time(), state)] if reason == "duplicate" else [])
+    res, first = await asyncio.to_thread(AIC.analyze, text, olds, settings.DROP_WORDS, state)
+    if res is None:
+        STATS["analyst_errors"] += 1
+        return reason, False
+    STATS["analyst_calls"] += 1
+    STATS[f"imp_{res['importance']}"] += 1
+    GATE_IMP["v"] = res["importance"]
+    if SEM["c"] is not None and olds and olds == SEM["olds"]:
+        SEM["cal"].add(SEM["c"], res["same_event_as"] > 0 and not res["adds_new_info"])   # برچسب خودکار برای آستانه‌ها
+    verdict = analysis_verdict(res)
+    if verdict is None:
+        if reason == "duplicate":
+            STATS["analyst_rescued"] += 1
+        return None, True
+    second = None
+    if AIC.can_analyze(state, (first,)):
+        second, _ = await asyncio.to_thread(AIC.analyze, text, olds, settings.DROP_WORDS, state, (first,))
+    if veto_confirmed(verdict, second):
+        STATS["analyst_veto_confirmed"] += 1
+        return verdict, True
+    STATS["analyst_veto_overruled"] += 1
+    return None, True
+
+
+AUDIT_REASONS = ("not_news", "dropword", "ad", "profanity")
+AUDIT_DAY = {"day": "", "n": 0}
+
+
+def audit_wanted(reason):
+    """نمونه‌ای از پیام‌های ردشده‌ی قوانین را هم هوش مصنوعی می‌خواند، تا اشتباه‌ات قوانین (پیام خوبِ ردشده) سنجیده شود."""
+    if not ANALYST["on"] or AIC is None or AIC.mode == "off" or reason not in AUDIT_REASONS or settings.AUDIT_PER_DAY <= 0:
+        return False
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    if AUDIT_DAY["day"] != day:
+        AUDIT_DAY.update({"day": day, "n": 0})
+    if AUDIT_DAY["n"] >= settings.AUDIT_PER_DAY or random.random() > 0.12:
+        return False
+    AUDIT_DAY["n"] += 1
+    return True
+
+
+async def audit_task(text, reason, state):
+    try:
+        if not AIC.can_analyze(state):
+            return
+        res, _ = await asyncio.to_thread(AIC.analyze, text, [], settings.DROP_WORDS, state)
+        if res is None:
+            return
+        STATS[f"audit_{reason}_n"] = STATS.get(f"audit_{reason}_n", 0) + 1
+        good = res["newsworthy"] and not res["banned"] and not res["ad"] and res["importance"] >= max(1, settings.MIN_IMPORTANCE)
+        if good:
+            STATS[f"audit_{reason}_good"] = STATS.get(f"audit_{reason}_good", 0) + 1   # قوانین رد کردند ولی هوش مصنوعی می‌فرستاد
+    except Exception:
+        pass
 
 
 async def apply_ai(reason, sig, text, state):
@@ -549,15 +654,20 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         too_old = (getattr(msg, "date", None) is not None and settings.MAX_AGE_HOURS > 0 and
                    (datetime.now(timezone.utc) - msg.date).total_seconds() > settings.MAX_AGE_HOURS * 3600)
         reason, sig = ("too_old", None) if too_old else classify(raw, text, state)
+        analysed = False
         if reason in (None, "duplicate"):
             sig = sig or signature(text)
             reason, decided = await apply_semantic(reason, sig, text, state)
             if not decided:
-                reason = await apply_ai(reason, sig, text, state)
-        if reason is None:
+                reason, analysed = await apply_analyst(reason, sig, text, state)
+                if not analysed:
+                    reason = await apply_ai(reason, sig, text, state)
+        if reason is None and not analysed:
             reason = await apply_gate(text, state)
         if reason is None:
             reason = rate_limit_reason(GATE_IMP["v"], time.time())
+        if audit_wanted(reason):
+            t = asyncio.create_task(audit_task(text, reason, state)); _BG.add(t); t.add_done_callback(_BG.discard)
         bench_label = True if reason in ("dropword", "ad") else (False if reason is None else None)
         if bench_label is not None and bench_wanted():
             t = asyncio.create_task(bench_task(text, bench_label, state)); _BG.add(t); t.add_done_callback(_BG.discard)
@@ -755,7 +865,8 @@ async def run():
         BASE_STATUS["ai"] = AIC.info()
         apply_reset(state)
         restore_metrics(state)
-        SEM["mode"] = os.environ.get("SEMANTIC_MODE", "on").strip().lower()
+        SEM["mode"] = os.environ.get("SEMANTIC_MODE", "on").strip().lower() or "on"
+        ANALYST["on"] = (os.environ.get("ANALYST_MODE", "on").strip().lower() or "on") != "off"
         if SEM["mode"] != "off":
             emb = semantic.Embedder()
             await asyncio.to_thread(emb.init)
