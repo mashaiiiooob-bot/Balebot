@@ -889,6 +889,7 @@ async def run():
                                                         settings.PROMO_TEXT, settings.PROMO_INTERVAL, settings.PROMO_VISIBLE))
             log.info("Promo loop is ON (interval=%ss, visible=%ss)", settings.PROMO_INTERVAL, settings.PROMO_VISIBLE)
         last_ping = 0.0
+        last_revive = time.monotonic()
         wake.set()  # دور اول: بررسی فوری برای جبران پیام‌های زمان خاموشی
         while True:
             wake.clear()
@@ -911,6 +912,12 @@ async def run():
                 BASE_STATUS["panel"] = panel.status()
             write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "sem": sem_info(), "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
                           "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
+            if AIC is not None and AIC.failed and time.monotonic() - last_revive >= 600:
+                last_revive = time.monotonic()
+                back = await asyncio.to_thread(AIC.revive)     # سرویسی که موقتاً (۵۰۳/۴۲۹) افتاده بود برمی‌گردد
+                if back:
+                    BASE_STATUS["ai"] = AIC.info()
+                    log.info("AI provider(s) back: %s", ",".join(back))
             if settings.HEALTHCHECK_URL and time.monotonic() - last_ping >= 240:
                 last_ping = time.monotonic()
                 await asyncio.to_thread(ping_healthcheck)

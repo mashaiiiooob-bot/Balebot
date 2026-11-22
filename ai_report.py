@@ -91,6 +91,7 @@ def main():
     state, status = load("state/state.json"), load("state/status.json")
     a = ai_mod.AI()
     a.init()
+    a.revive()   # سرویسی که موقع شروع ۵۰۳ داده بود یک بار دیگر امتحان می‌شود
     order = [p.name for p in a.providers]
     result = {"generated_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime()), "reports": {}, "errors": {}, "facts": {}}
     for p in a.providers + a.failed:

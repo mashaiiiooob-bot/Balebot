@@ -346,13 +346,38 @@ class AI:
         self.gate = gate if gate in ("off", "shadow", "on") else "shadow"
         self.failed = []
 
-    def init(self):
+    TRANSIENT = ("http_0", "http_429", "http_500", "http_502", "http_503", "http_504", "bad_json")
+
+    def init(self, retries=3, wait=4):
+        """خطای موقتی (۵۰۳، ۴۲۹، شبکه) در شروع نباید سرویس را برای کل اجرا حذف کند: چند بار دوباره تلاش."""
         for p in self.providers:
-            p.init()
+            for attempt in range(retries):
+                p.init()
+                if p.ok or p.probe not in self.TRANSIENT:
+                    break
+                time.sleep(wait * (attempt + 1))
         self.failed = [p for p in self.providers if not p.ok]
         self.providers = [p for p in self.providers if p.ok]
         if not self.providers:
             self.mode = "off"
+
+    def revive(self):
+        """سرویس‌هایی که با خطای موقتی افتاده‌اند را دوباره می‌آزماید و در صورت سلامت به چرخه برمی‌گرداند (به ترتیب اولویت)."""
+        back = []
+        for p in list(self.failed):
+            if p.probe in self.TRANSIENT:
+                p.init()
+                if p.ok:
+                    self.failed.remove(p)
+                    self.providers.append(p)
+                    back.append(p.name)
+        if back:
+            rank = {c.name: i for i, (c, _) in enumerate(ORDER)}
+            self.providers.sort(key=lambda p: rank.get(p.name, 99))
+            if self.mode == "off" and (self.providers):
+                self.mode = (os.environ.get("AI_MODE", "") or "shadow").strip().lower()
+                self.mode = self.mode if self.mode in ("off", "shadow", "on") else "shadow"
+        return back
 
     def info(self):
         return {"mode": self.mode, "strategy": self.strategy,

@@ -567,3 +567,20 @@ assert _aio.run(poll.apply_gate("x", stx)) is None and poll.STATS["ai_skipped"] 
 asyncio.sleep = _orig_sleep
 poll.AIC = None; poll.SENT_TS.clear(); settings.MIN_IMPORTANCE = 3; settings.MAX_PER_HOUR = 20; _reset()
 print("RATE CAP OK")
+
+# ================= خطای موقتیِ سرویس: تلاش مجدد و بازگشت =================
+class Flaky(ai_mod.Provider):
+    name = "flaky"
+    def __init__(self, probes): super().__init__("k"); self.probes = list(probes); self.inits = 0
+    def init(self): self.inits += 1; self.probe = self.probes.pop(0) if self.probes else "ok"; self.ok = self.probe == "ok"
+    def _generate(self, t): return 200, {}
+def mk2(*provs):
+    os.environ["GEMINI_API_KEY"] = "x"; a = ai_mod.AI(); a.providers = list(provs); a.mode = "on"; os.environ.pop("GEMINI_API_KEY"); return a
+f1 = Flaky(["http_503", "http_503", "ok"]); a1 = mk2(f1); a1.init(retries=3, wait=0)
+assert f1.ok and f1.inits == 3 and [p.name for p in a1.providers] == ["flaky"] and a1.failed == []          # با تلاش مجدد سالم شد
+f2 = Flaky(["http_401"]); a2 = mk2(f2); a2.init(retries=3, wait=0)
+assert not f2.ok and f2.inits == 1 and a2.failed == [f2] and a2.mode == "off"                                 # خطای دائمی (کلید نامعتبر): تلاش بی‌خود نه
+f3 = Flaky(["http_503", "http_503", "http_503"]); a3 = mk2(f3); a3.init(retries=3, wait=0)
+assert a3.failed == [f3] and a3.revive() == ["flaky"] and a3.providers == [f3] and a3.failed == [] and a3.mode != "off"   # revive بعداً برش می‌گرداند
+f4 = Flaky(["http_402"]); a4 = mk2(f4); a4.init(retries=2, wait=0); assert a4.revive() == [] and a4.failed == [f4]  # ۴۰۲ (اعتبار صفر): برنمی‌گردد
+print("REVIVE OK")
