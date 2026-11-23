@@ -32,6 +32,9 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AI_LIMIT_GEMINI: ${{ vars.AI_LIMIT_GEMINI }}
+          AI_LIMIT_GROQ: ${{ vars.AI_LIMIT_GROQ }}
+          AI_LIMIT_CLOUDFLARE: ${{ vars.AI_LIMIT_CLOUDFLARE }}
         run: python ai_report.py
 
       # شاخه‌ی جدا (reports): ربات اصلی شاخه‌ی state را هر دقیقه بازنویسی می‌کند و فایل را پاک می‌کرد

@@ -381,7 +381,7 @@ class AI:
 
     def info(self):
         return {"mode": self.mode, "strategy": self.strategy,
-                "providers": {p.name: ({"model": p.model, "probe": p.probe} if p.ok else
+                "providers": {p.name: ({"model": p.model, "probe": p.probe, "daily_limit": p.limit} if p.ok else
                                   {"model": p.model, "probe": p.probe, "listed": getattr(p, "listed", [])})
                               for p in self.providers + self.failed}}
 
