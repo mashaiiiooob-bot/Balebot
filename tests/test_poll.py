@@ -586,3 +586,18 @@ f4 = Flaky(["http_402"]); a4 = mk2(f4); a4.init(retries=2, wait=0); assert a4.re
 f5 = Flaky(["http_410", "http_410", "http_410"]); a5 = mk2(f5); a5.init(retries=3, wait=0)
 assert a5.failed == [f5] and a5.revive() == ["flaky"]                                                  # ۴۱۰ (مدل/سرویس موقتاً «Gone») هم برمی‌گردد
 print("REVIVE OK")
+
+# ================= ثبت توکن و سهمیه‌ی واقعی سرویس =================
+class TK(ai_mod.Provider):
+    name = "tk"
+    def __init__(self): super().__init__("k"); self.ok = True
+tk = TK()
+tk._note({"usage": {"total_tokens": 1500}, "_rl": {"x-ratelimit-limit-requests": "1000", "x-ratelimit-remaining-requests": "940"}})
+tk._note({"usageMetadata": {"totalTokenCount": 900}}); tk._note({}); tk._note({"usage": {"total_tokens": "bad"}}); tk._note(None)
+assert tk.tokens == 2400 and tk.tok_n == 2 and tk.rl["x-ratelimit-remaining-requests"] == "940"
+atk = mk("failover", tk); pf2 = atk.perf()["tk"]
+assert pf2["avg_tokens_per_call"] == 1200 and pf2["tokens_seen"] == 2400 and pf2["provider_ratelimit"]["x-ratelimit-limit-requests"] == "1000"
+for k in list(os.environ):
+    if k.endswith("_API_KEY") or k == "CLOUDFLARE_API_TOKEN": os.environ.pop(k)
+assert ai_mod.AI().perf() == {}                                   # بدون هیچ سرویسی: گزارش خالی، بدون خطا
+print("TOKENS OK")

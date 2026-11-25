@@ -1,0 +1,36 @@
+name: Duplicate audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Measure duplicates in the real channel posts
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          TG_DESTINATION: ${{ vars.TG_DESTINATION }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python dup_audit.py
+      - name: Publish to the reports branch
+        run: |
+          mkdir /tmp/rep && cp dup_audit.json /tmp/rep/
+          cd /tmp/rep && git init -q && git checkout -q -b reports
+          git config user.name "balebot-report" && git config user.email "balebot-report@users.noreply.github.com"
+          git add . && git commit -q -m "Duplicate audit"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" reports:dup-audit

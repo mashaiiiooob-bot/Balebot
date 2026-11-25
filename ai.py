@@ -96,7 +96,12 @@ def _verdict(out):
 def _post(url, body, headers=None):
     try:
         r = requests.post(url, json=body, headers=headers or {}, timeout=20)
-        return r.status_code, (r.json() if r.content else {})
+        data = r.json() if r.content else {}
+        if isinstance(data, dict):   # سهمیه‌ی باقی‌مانده را خودِ سرویس اعلام می‌کند (مثلاً Groq: x-ratelimit-*)
+            rl = {k.lower(): v for k, v in r.headers.items() if k.lower().startswith("x-ratelimit")}
+            if rl:
+                data["_rl"] = rl
+        return r.status_code, data
     except Exception as exc:  # آدرس/کلید هرگز چاپ نمی‌شود
         return 0, {"_exc": type(exc).__name__}
 
@@ -116,7 +121,22 @@ class Provider:
         self._blocked_until = 0.0
         self.calls = self.okc = self.errc = 0
         self.max_out = 120
+        self.tokens = self.tok_n = 0
+        self.rl = None
         self.lat = deque(maxlen=300)
+
+    def _note(self, data):
+        """مصرف توکن هر درخواست و سهمیه‌ی اعلام‌شده‌ی سرویس را (در صورت وجود) ثبت می‌کند؛ هرگز خطا نمی‌دهد."""
+        try:
+            usage = data.get("usage") or {}
+            total = usage.get("total_tokens") or (data.get("usageMetadata") or {}).get("totalTokenCount")
+            if isinstance(total, int) and total > 0:
+                self.tokens += total
+                self.tok_n += 1
+            if data.get("_rl"):
+                self.rl = data["_rl"]
+        except Exception:
+            pass
 
     def _run(self, text):
         """_generate + اندازه‌گیری تأخیر و نرخ خطا (برای مقایسه‌ی سرویس‌ها)."""
@@ -205,6 +225,7 @@ class Gemini(Provider):
             status, data = _post(f"{GL}/models/{self.model}:generateContent", body, {"x-goog-api-key": self.key})
         else:
             status, data = _post(f"{VX}/{self.model}:generateContent?key={self.key}", body)
+        self._note(data)
         if status != 200:
             return status, None
         try:
@@ -245,6 +266,7 @@ class OpenAICompat(Provider):
         if status == 400:  # بعضی مدل‌ها response_format را نمی‌پذیرند
             body.pop("response_format")
             status, data = _post(f"{self.base}/chat/completions", body, {"Authorization": f"Bearer {self.key}"})
+        self._note(data)
         if status != 200:
             return status, None
         try:
@@ -395,7 +417,8 @@ class AI:
         for p in self.providers + self.failed:
             lat = sorted(p.lat)
             q = lambda f: round(lat[min(len(lat) - 1, int(len(lat) * f))]) if lat else None
-            out[p.name] = {"calls": p.calls, "ok": p.okc, "err": p.errc,
+            out[p.name] = {"avg_tokens_per_call": round(p.tokens / p.tok_n) if p.tok_n else None, "tokens_seen": p.tokens,
+                           "provider_ratelimit": p.rl, "calls": p.calls, "ok": p.okc, "err": p.errc,
                            "err_rate": round(p.errc / p.calls, 3) if p.calls else None, "p50_ms": q(0.5), "p95_ms": q(0.95)}
         return out
 
