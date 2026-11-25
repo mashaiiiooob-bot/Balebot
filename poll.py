@@ -35,6 +35,7 @@ from promo import promo_loop
 from state import State
 from telegram_out import FanoutBale, TelegramLane
 import tg_panel
+import supa_sink
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
@@ -48,6 +49,7 @@ AIC = None
 ANALYST = {"on": False}   # تحلیل کامل در یک بار خواندن (جایگزین پرسش‌های جدای دروازه/تکراری)
 SEM = {"olds": [], "c": None, "emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None}   # معنایی (فقط RAM + کالیبراسیون)
 SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
+SINK = supa_sink.from_env()      # آمار/رویدادها به Supabase (بدون env غیرفعال)؛ هرگز ارسال را مختل نمی‌کند
 GATE_IMP = {"v": None}        # اهمیتِ پیامِ در حال بررسی (از دروازه)
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
 OUTAGE = {"until": 0.0, "step": 0, "since": 0.0, "diag_at": 0.0}
@@ -673,6 +675,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
             t = asyncio.create_task(bench_task(text, bench_label, state)); _BG.add(t); t.add_done_callback(_BG.discard)
         if reason:
             STATS[reason] += 1
+            SINK.event(key[:12], msg.id, "rejected", reason, GATE_IMP["v"] if reason == "rate_cap" else None)
         else:
             try:
                 await forward(bale, msg, text, tmpdir, text_only)
@@ -680,6 +683,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 RECENT.append({"w": set(sig["w"]), "n": set(sig["n"]), "p": set(sig.get("p", [])), "text": text[:700], "t": time.time()})
                 del RECENT[:-40]
                 STATS["sent"] += 1
+                SINK.event(key[:12], msg.id, "sent", None, GATE_IMP["v"])
                 SENT_TS.append(time.time())
                 if SEM["vec"] is not None:
                     SEM["mem"].add(SEM["vec"], text, sig)
@@ -693,6 +697,8 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 raise
             except Exception as exc:
                 STATS["failed"] += 1
+                _c = _http_code(exc)
+                SINK.event(key[:12], msg.id, "failed", _c or type(exc).__name__)
                 # فقط نوع خطا و پیام کوتاهِ خود Bale/شبکه (بدون متن پیام یا اطلاعات منبع)
                 STATS["last_fail"] = (type(exc).__name__ + ": " + re.sub(r"\d{6,}|https?://\S+", "?", str(exc))[:80])
                 state.add_fail(key, msg.id)
@@ -833,6 +839,10 @@ async def run():
         bale = FanoutBale(bale, tg_lane, settings.BALE_DESTINATION, settings.SIGNATURE, os.environ.get("TG_SIGNATURE", ""))
         tg_task = asyncio.create_task(tg_lane.run())
         log.info("Telegram lane enabled")
+    SINK.dest = "bale+tg" if tg_lane else "bale"
+    sink_task = asyncio.create_task(SINK.run()) if SINK.enabled else None
+    if sink_task:
+        log.info("Supabase sink enabled")
     tmpdir = tempfile.mkdtemp(prefix="balebot_")
     deadline = time.monotonic() + settings.LOOP_SECONDS
 
@@ -882,6 +892,7 @@ async def run():
         except Exception as exc:                 # noqa: BLE001  خرابی پنل هرگز نباید ارسال را مختل کند
             log.warning("Telegram panel disabled: %s", type(exc).__name__)
         if panel:
+            panel.on_collect = SINK.channel_and_posts      # عکس ساعتی کانال و آمار پست‌ها → Supabase
             panel_tasks = [asyncio.create_task(panel.run()), asyncio.create_task(panel.snapshot_loop())]
             log.info("Telegram panel enabled (%d admin(s))", len(panel.admins))
         if settings.PROMO_LOOP == "on":
@@ -910,6 +921,10 @@ async def run():
                 BASE_STATUS["tg"] = tg_lane.status()
             if panel:
                 BASE_STATUS["panel"] = panel.status()
+            if SINK.enabled:
+                BASE_STATUS["supabase"] = SINK.status_info()
+                SINK.status(os.environ.get("GITHUB_RUN_ID"), int((time.time() - STARTED) / 60), STATS,
+                            {"tg": tg_lane.status() if tg_lane else None, "paused": bool(state.data.get("paused"))})
             write_status({**BASE_STATUS, "stats": dict(STATS), "stats_total": totals, "sem": sem_info(), "bale_outage": ({"since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(OUTAGE["since"])), "retry_in_s": max(0, int(OUTAGE["until"] - time.monotonic()))} if OUTAGE["since"] else None),
                           "since_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(SINCE["t"] or time.time())), "ai_stats": dict(AIC.stats) if AIC else {}, "compare": compare_report(), "uptime_min": int((time.time() - STARTED) / 60)})
             if AIC is not None and AIC.failed and time.monotonic() - last_revive >= 600:
@@ -940,6 +955,13 @@ async def run():
             panel.stop()
             for t_ in panel_tasks:
                 t_.cancel()
+        if sink_task:                            # ارسال نهایی صف Supabase (حداکثر ۱۵ ثانیه)
+            SINK.stop()
+            try:
+                await asyncio.wait_for(asyncio.to_thread(SINK.flush_sync), timeout=15)
+            except Exception:
+                pass
+            sink_task.cancel()
         if tg_lane:                              # صف تلگرام تا ۳۰ ثانیه فرصت می‌گیرد خالی شود؛ سپس tg_seen ذخیره می‌شود
             try:
                 for _ in range(30):

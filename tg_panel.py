@@ -313,6 +313,7 @@ class Panel:
         self._admin_cache = None
         self._lock = asyncio.Lock()
         self._stop = False
+        self.on_collect = None          # callback(data) پس از هر دریافت موفق آمار کانال (مثلاً ارسال به Supabase)
 
     # ---- داده
     async def data(self, force=False):
@@ -328,6 +329,11 @@ class Panel:
                 self.summary = {"posts": len(d.get("posts") or []), "subs": ch.get("subs"), "full_error": ch.get("full_error"),
                                 "fetched_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(now))}
                 self.snap.record(ch.get("subs"), now)
+                if self.on_collect:
+                    try:
+                        self.on_collect(d)
+                    except Exception:                   # noqa: BLE001  هرگز نباید پنل را مختل کند
+                        pass
                 return d
             except Exception as exc:                  # noqa: BLE001
                 self.last_error = type(exc).__name__
