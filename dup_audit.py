@@ -1,28 +1,58 @@
 """ممیزی تکراری‌ها روی پست‌های واقعیِ کانال مقصد: برای هر پست، نزدیک‌ترین پستِ قبلی (تا ۶ ساعت) را با شباهت معنایی (Embedding) پیدا می‌کند
 و می‌گوید روش‌های واژگانی (v1/v2) آن را تکراری می‌دانستند یا نه. خروجی: dup_audit.json (شامل ۷۰ نویسه‌ی اول متن برای بررسی؛ پست‌ها عمومی‌اند)."""
-import asyncio
+import html as htmllib
 import json
 import os
+import re
 import time
+from datetime import datetime
 
-from telethon import TelegramClient
-from telethon.sessions import StringSession
+import requests
 
 import dedupe
 import semantic
 
+POST_RE = re.compile(r'data-post="([^"/]+)/(\d+)"')
+TEXT_RE = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.S)
+TIME_RE = re.compile(r'<time[^>]*datetime="([^"]+)"')
 
-async def main():
-    chat = os.environ["TG_DESTINATION"]
-    client = TelegramClient(StringSession(os.environ["TG_SESSION"]), int(os.environ["TG_API_ID"]), os.environ["TG_API_HASH"])
-    await client.connect()
-    posts = []
-    async for m in client.iter_messages(chat, limit=int(os.environ.get("N", "500"))):
-        body = " ".join((m.message or "").split()).split("✍")[0].strip()
-        if len(body) >= 12 and m.date:
-            posts.append({"id": m.id, "ts": m.date.timestamp(), "text": body})
-    await client.disconnect()
-    posts.sort(key=lambda p: p["ts"])
+
+def parse_page(page_html):
+    """پست‌های یک صفحه‌ی پیش‌نمایش عمومی: [{id, ts, text}] (فقط پست‌های متنی/دارای کپشن)."""
+    out = []
+    chunks = page_html.split('class="tgme_widget_message_wrap')[1:]
+    for ch in chunks:
+        m, t = POST_RE.search(ch), TEXT_RE.search(ch)
+        tm = TIME_RE.search(ch)
+        if not (m and t and tm):
+            continue
+        body = re.sub(r"<br\s*/?>", " ", t.group(1))
+        body = htmllib.unescape(re.sub(r"<[^>]+>", "", body))
+        body = " ".join(body.split()).split("✍")[0].strip()
+        if len(body) >= 12:
+            out.append({"id": int(m.group(2)), "ts": datetime.fromisoformat(tm.group(1)).timestamp(), "text": body})
+    return out
+
+
+def fetch_posts(channel, limit=500, get=requests.get):
+    posts, before = {}, None
+    for _ in range(60):
+        r = get(f"https://t.me/s/{channel}" + (f"?before={before}" if before else ""), timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        ids = [int(x) for _, x in POST_RE.findall(r.text)]
+        for p in parse_page(r.text):
+            posts[p["id"]] = p
+        if not ids or min(ids) <= 1 or len(posts) >= limit:
+            break
+        before = min(ids)
+        time.sleep(0.4)
+    return sorted(posts.values(), key=lambda p: p["ts"])
+
+
+def main():
+    channel = os.environ["TG_DESTINATION"].lstrip("@")
+    posts = fetch_posts(channel, int(os.environ.get("N", "500")))
+    if len(posts) < 20:
+        raise SystemExit(f"too few posts parsed: {len(posts)}")
     emb = semantic.Embedder()
     emb.init()
     vecs = emb.embed([p["text"] for p in posts])
@@ -61,4 +91,5 @@ async def main():
     print(json.dumps(summary, ensure_ascii=False))
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    main()
