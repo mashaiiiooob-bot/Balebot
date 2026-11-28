@@ -93,6 +93,12 @@ jobs:
           TG_STATS_CHANNEL: ${{ vars.TG_STATS_CHANNEL }}
           SUPABASE_INGEST_URL: ${{ secrets.SUPABASE_INGEST_URL }}
           SUPABASE_INGEST_KEY: ${{ secrets.SUPABASE_INGEST_KEY }}
+          ADMIN_BRAIN: ${{ vars.ADMIN_BRAIN }}
+          ADMIN_BRAIN_URL: ${{ secrets.ADMIN_BRAIN_URL }}
+          BRAIN_HOURS: ${{ vars.BRAIN_HOURS }}
+          BRAIN_OLD_AFTER_H: ${{ vars.BRAIN_OLD_AFTER_H }}
+          BRAIN_OLD_MARGIN: ${{ vars.BRAIN_OLD_MARGIN }}
+          BRAIN_RETENTION_DAYS: ${{ vars.BRAIN_RETENTION_DAYS }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

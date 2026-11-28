@@ -1,0 +1,35 @@
+name: Admin brain audit
+
+# بازبینی روزانه: جفت‌های بسیار شبیهِ دو پیام «ارسال‌شده» در چند روز اخیر را پیدا می‌کند و گزارش را به چت خصوصی ادمین (بله) می‌فرستد.
+# لاگ این مخزن عمومی است: فقط شمارنده چاپ می‌شود؛ متن پیام‌ها فقط در چت خصوصی ادمین دیده می‌شود.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 20 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Audit multi-day memory
+        env:
+          ADMIN_BRAIN: shadow
+          ADMIN_BRAIN_URL: ${{ secrets.ADMIN_BRAIN_URL }}
+          SUPABASE_INGEST_URL: ${{ secrets.SUPABASE_INGEST_URL }}
+          SUPABASE_INGEST_KEY: ${{ secrets.SUPABASE_INGEST_KEY }}
+          BRAIN_MODEL: ${{ vars.BRAIN_MODEL }}
+          AUDIT_HOURS: ${{ vars.AUDIT_HOURS }}
+          AUDIT_MIN_SIM: ${{ vars.AUDIT_MIN_SIM }}
+          BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
+          BALE_ADMIN_CHAT: ${{ secrets.BALE_ADMIN_CHAT }}
+        run: python admin_brain.py audit
