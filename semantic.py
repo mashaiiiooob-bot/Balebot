@@ -49,8 +49,9 @@ class Embedder:
         return vecs
 
     def _gem(self, texts):
+        extra = {"outputDimensionality": 1024} if "gemini-embedding" in (self._gem_model or "") else {}   # سازگار با ستون vector(1024)
         body = {"requests": [{"model": f"models/{self._gem_model}", "content": {"parts": [{"text": t}]},
-                              "taskType": "SEMANTIC_SIMILARITY"} for t in texts]}
+                              "taskType": "SEMANTIC_SIMILARITY", **extra} for t in texts]}
         r = requests.post(f"{GL}/models/{self._gem_model}:batchEmbedContents", json=body,
                           headers={"x-goog-api-key": self.gem_key}, timeout=30)
         if r.status_code != 200:

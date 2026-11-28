@@ -36,6 +36,7 @@ from state import State
 from telegram_out import FanoutBale, TelegramLane
 import tg_panel
 import supa_sink
+import admin_brain
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("balebot")
@@ -44,12 +45,13 @@ log = logging.getLogger("balebot")
 STATS = {"seen": 0, "no_text": 0, "emptied_by_cleaner": 0, "ad": 0, "dropword": 0, "profanity": 0, "not_news": 0, "duplicate": 0, "sent": 0, "failed": 0,
          "ai_banned": 0, "ai_ad": 0, "gate_calls": 0, "gate_errors": 0, "sh_gate_banned": 0, "sh_gate_ad": 0,
          "analyst_calls": 0, "analyst_errors": 0, "analyst_rescued": 0, "analyst_veto_confirmed": 0, "analyst_veto_overruled": 0, "sem_calls": 0, "sem_errors": 0, "sem_dup": 0, "sem_new": 0, "sem_llm": 0, "sem_rescued": 0, "sem_caught": 0, "sem_vetoed": 0, "dup_v1_only": 0, "dup_v2_only": 0, "low_importance": 0, "rate_cap": 0, "sh_gate_low": 0, "imp_1": 0, "imp_2": 0, "imp_3": 0, "imp_4": 0, "imp_5": 0, "bale_outage": 0, "too_old": 0, "ai_calls": 0, "ai_errors": 0, "ai_skipped": 0, "ai_rescued": 0, "ai_caught": 0,
-         "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
+         "brain_errors": 0, "brain_shadow_would_dup": 0, "sh_dup_ai_dup": 0, "sh_dup_ai_new": 0, "sh_new_ai_dup": 0, "sh_new_ai_new": 0}
 AIC = None
 ANALYST = {"on": False}   # تحلیل کامل در یک بار خواندن (جایگزین پرسش‌های جدای دروازه/تکراری)
-SEM = {"olds": [], "c": None, "emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None}   # معنایی (فقط RAM + کالیبراسیون)
+SEM = {"olds": [], "c": None, "emb": None, "mem": semantic.Memory(), "cal": semantic.Calibrator(), "mode": "off", "vec": None, "top": None}   # معنایی (فقط RAM + کالیبراسیون)
 SENT_TS = deque(maxlen=300)   # زمان ارسال‌های اخیر (برای سقف ساعتی)
 SINK = supa_sink.from_env()      # آمار/رویدادها به Supabase (بدون env غیرفعال)؛ هرگز ارسال را مختل نمی‌کند
+BRAIN = admin_brain.from_env()    # ادمین هوشمند: حافظه‌ی چندروزه (ADMIN_BRAIN=off|shadow|on؛ پیش‌فرض off)
 GATE_IMP = {"v": None}        # اهمیتِ پیامِ در حال بررسی (از دروازه)
 # ---- قطعی/خطای سراسری Bale: پیام‌ها رد نمی‌شوند؛ ربات صبر می‌کند و دوباره تلاش می‌کند ----
 OUTAGE = {"until": 0.0, "step": 0, "since": 0.0, "diag_at": 0.0}
@@ -203,7 +205,7 @@ def ai_candidates(sig, now, state=None):
 
 async def apply_semantic(reason, sig, text, state):
     """تصمیم معنایی. خروجی: (reason, decided). decided=False یعنی نظری نداد (به روش واژگانی/AI برگرد)."""
-    SEM["vec"] = None
+    SEM["vec"], SEM["top"] = None, None
     SEM["olds"], SEM["c"] = [], None
     emb = SEM["emb"]
     if SEM["mode"] == "off" or emb is None or not emb.provider or reason not in (None, "duplicate"):
@@ -219,23 +221,35 @@ async def apply_semantic(reason, sig, text, state):
     mem = SEM["mem"]
     ctx = dedupe_context(state.recent_seen(now))
     cands = mem.top(vec, sig, now, dedupe_compare, ctx)
+    warm = mem.warm()
+    if BRAIN.enabled:                           # حافظه‌ی چندروزه (Supabase): بعد از ریستارت هم فراموش نمی‌شود
+        db = await asyncio.to_thread(BRAIN.match, vec, getattr(emb, "model", None), sig, now, dedupe_compare, ctx)
+        if db is None:
+            STATS["brain_errors"] += 1          # خطا/توقف: همان روش فعلی (fail-open)
+        elif BRAIN.live:
+            cands = admin_brain.merge(cands, db)
+            warm = warm or BRAIN.warm
+        elif db and (not cands or db[0][0] > cands[0][0]) and db[0][0] >= SEM["cal"].thresholds()[1]:
+            STATS["brain_shadow_would_dup"] += 1    # حالت shadow: فقط اندازه‌گیری؛ تصمیم عوض نمی‌شود
+    if cands:
+        SEM["top"] = (cands[0][0], cands[0][1].get("id"))
     lo, hi = SEM["cal"].thresholds()
     if cands and cands[0][0] > lo:
         SEM["olds"], SEM["c"] = [x[1]["text"] for x in cands], cands[0][0]   # همتاها برای تحلیل‌گر
     if not cands:
         # هیچ همتای بدون تضاد در حافظه نیست. اگر روش واژگانی «تکراری» گفته بود و حافظه گرم نیست، به او اعتماد می‌کنیم.
-        if reason == "duplicate" and not mem.warm():
+        if reason == "duplicate" and not warm:
             return reason, False
         if reason == "duplicate":
             STATS["sem_vetoed"] += 1    # همتا فقط به‌خاطر تضاد مکان/عدد کنار رفت: واقعه‌ی دیگر
             STATS["sem_rescued"] += 1
         return None, not ANALYST["on"]
     c, entry = cands[0]
-    if c >= hi:
+    if c >= hi and not entry.get("old"):         # نامزدِ قدیمی (بیش از ۱۲ ساعت) فقط «راهنما» است؛ حذف خودکار نمی‌شود، تحلیل‌گر/LLM تصمیم می‌گیرد
         verdict = True
     elif ANALYST["on"]:
         # شباهت متوسط/پایین: تحلیل‌گرِ متن کاملِ LLM تصمیم می‌گیرد. تکراریِ واژگانیِ بدون همتای نزدیک (c ≤ t_low) نجات می‌یابد.
-        if reason == "duplicate" and c <= lo and mem.warm():
+        if reason == "duplicate" and c <= lo and warm:
             STATS["sem_rescued"] += 1
             return None, False
         return reason, False
@@ -258,6 +272,18 @@ async def apply_semantic(reason, sig, text, state):
     if reason == "duplicate":
         STATS["sem_rescued"] += 1
     return None, True
+
+
+def brain_remember(key, msg, text, sig, outcome, reason):
+    """ثبت پیام (متن پاک‌شده + امضا + بردار + تصمیم) در حافظه‌ی چندروزه. هرگز خطا نمی‌دهد."""
+    try:
+        if not BRAIN.enabled or reason in admin_brain.EARLY_REASONS or not (text or "").strip():
+            return
+        top = SEM["top"]
+        BRAIN.remember(key[:12], msg.id, text, sig or signature(text), SEM["vec"], getattr(SEM["emb"], "model", None), outcome, reason,
+                       dup_of=(top[1] if reason == "duplicate" and top else None), score=(top[0] if top else None), importance=GATE_IMP["v"])
+    except Exception:                           # noqa: BLE001
+        pass
 
 
 def analysis_verdict(res):
@@ -676,6 +702,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
         if reason:
             STATS[reason] += 1
             SINK.event(key[:12], msg.id, "rejected", reason, GATE_IMP["v"] if reason == "rate_cap" else None)
+            brain_remember(key, msg, text, sig, "rejected", reason)
         else:
             try:
                 await forward(bale, msg, text, tmpdir, text_only)
@@ -684,6 +711,7 @@ async def process_source(client, bale, state, entity, tmpdir, scrub=()):
                 del RECENT[:-40]
                 STATS["sent"] += 1
                 SINK.event(key[:12], msg.id, "sent", None, GATE_IMP["v"])
+                brain_remember(key, msg, text, sig, "sent", None)
                 SENT_TS.append(time.time())
                 if SEM["vec"] is not None:
                     SEM["mem"].add(SEM["vec"], text, sig)
@@ -843,6 +871,9 @@ async def run():
     sink_task = asyncio.create_task(SINK.run()) if SINK.enabled else None
     if sink_task:
         log.info("Supabase sink enabled")
+    brain_task = asyncio.create_task(BRAIN.run()) if BRAIN.enabled else None
+    if brain_task:
+        log.info("Admin brain enabled (mode=%s)", BRAIN.mode)
     tmpdir = tempfile.mkdtemp(prefix="balebot_")
     deadline = time.monotonic() + settings.LOOP_SECONDS
 
@@ -921,6 +952,8 @@ async def run():
                 BASE_STATUS["tg"] = tg_lane.status()
             if panel:
                 BASE_STATUS["panel"] = panel.status()
+            if BRAIN.enabled:
+                BASE_STATUS["brain"] = BRAIN.status_info()
             if SINK.enabled:
                 BASE_STATUS["supabase"] = SINK.status_info()
                 SINK.status(os.environ.get("GITHUB_RUN_ID"), int((time.time() - STARTED) / 60), STATS,
@@ -962,6 +995,13 @@ async def run():
             except Exception:
                 pass
             sink_task.cancel()
+        if brain_task:                           # ارسال نهایی صف حافظه‌ی چندروزه (حداکثر ۱۵ ثانیه)
+            BRAIN.stop()
+            try:
+                await asyncio.wait_for(asyncio.to_thread(BRAIN.flush_sync), timeout=15)
+            except Exception:
+                pass
+            brain_task.cancel()
         if tg_lane:                              # صف تلگرام تا ۳۰ ثانیه فرصت می‌گیرد خالی شود؛ سپس tg_seen ذخیره می‌شود
             try:
                 for _ in range(30):
